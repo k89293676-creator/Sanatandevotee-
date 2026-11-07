@@ -27,7 +27,7 @@ def _run(cmd: list) -> bool:
 
 def render_reel(uuid: str, audio_path: Path, ass_path: Path, shot_paths: list[Path],
                 bed_path: Path, duration: float, hook_text: str, series_badge: str,
-                style: str = "cosmic_blue") -> tuple[Path | None, Path | None]:
+                style: str = "cosmic_blue", profile: str = "standard") -> tuple[Path | None, Path | None]:
     work = media_dir() / "work" / uuid
     work.mkdir(parents=True, exist_ok=True)
     out_mp4 = RENDERS / f"{uuid}.mp4"
@@ -66,7 +66,11 @@ def render_reel(uuid: str, audio_path: Path, ass_path: Path, shot_paths: list[Pa
     audio_input = mixed_audio if mixed_audio.exists() else audio_path
     # Final: overlay captions (ASS) + vignette + badge text
     # Use subtitles filter with ass file
-    vf = f"subtitles={ass_path.as_posix()}:fontsdir=assets/fonts"
+    try:
+        ass_rel = ass_path.relative_to(project_root()).as_posix()
+    except Exception:
+        ass_rel = ass_path.name
+    vf = f"subtitles={ass_rel}:fontsdir=assets/fonts"
     font_path = project_root() / "assets" / "fonts" / "NotoSansDevanagari-Bold.ttf"
     # skip drawtext badge for now (added in polish) to keep filter valid
     cmd = [FFMPEG, "-y", "-i", str(base_video), "-i", str(audio_input),

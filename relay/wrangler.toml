@@ -1,18 +1,18 @@
 name = "chalisa-relay"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
+workers_dev = true
+preview_urls = false
+
+[observability]
+enabled = false
 
 [triggers]
-crons = ["* * * * *"]
+crons = ["* * * * *", "30 18 * * *"]
 
 [[kv_namespaces]]
 binding = "TOKENS"
-id = "REPLACE_WITH_KV_ID"
-
-[[d1_databases]]
-binding = "DB"
-database_name = "chalisa"
-database_id = "REPLACE_WITH_D1_ID"
+id = "089ced7fcd4d4c4b81707ef702c811fd"
 
 [assets]
 directory = "./public"

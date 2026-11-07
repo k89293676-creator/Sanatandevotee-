@@ -74,7 +74,9 @@ CREATE TABLE IF NOT EXISTS reels (
   remote_cover_url TEXT,
   attempts INTEGER DEFAULT 0,
   last_error TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  backend TEXT DEFAULT 'make_com',
+  render_profile TEXT DEFAULT 'standard'
 );
 CREATE TABLE IF NOT EXISTS arms (
   arm_type TEXT NOT NULL,

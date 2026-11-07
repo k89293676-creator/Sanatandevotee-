@@ -4,6 +4,7 @@ export interface Env {
   TOKENS: KVNamespace;
   FACTORY_API_KEY: string;
   FACTORY_HMAC_SECRET: string;
+  MAKE_KEY: string;
   TELEGRAM_BOT_TOKEN: string;
   TELEGRAM_CHAT_ID: string;
   META_APP_ID: string;

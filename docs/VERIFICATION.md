@@ -1,6 +1,15 @@
 # Verification
 - P0: OS Windows 10; secret_scan clean; doctor tooling PASS.
-- P2: 42 verses loaded; N=42 derived.
-- P4: conjunct render frame produced (media/work/conjunct.png); libass+harfbuzz present.
-- Tests: pytest 7 passed.
-- Relay: tsc clean.
+- U0: pre-v4 tag created; backups/pre-v4 DB copy; V4_AUDIT.md; ROLLBACK_V4.md.
+- U1: Pixabay key validated (live search 200, 103751 total).
+- U2: provider chain implemented (Pixabay/Wikimedia/Pollinations); tests pass.
+- U3: migrations 001+002 applied to Supabase; up/down scripts present.
+- U4: Make endpoints implemented; tsc clean.
+- U5: planner uses make slots/jitter 0; lite5mb profile param added.
+- U7: insights endpoint + optimizer adaptation.
+- U8: grep "comment CHALISA" -> no matches.
+- P2: 42 verses loaded; N=42.
+- P4: conjunct render frame produced; libass+harfbuzz.
+- Tests: pytest 15 passed; vitest 1 passed; tsc clean; secret_scan clean.
+- Render test: 1080x1920 H.264 MP4 + cover produced.
+- TTS: edge-tts MP3 produced.

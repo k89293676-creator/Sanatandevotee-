@@ -1,5 +1,6 @@
 import { Env } from "./db";
 import { handleFactoryApi } from "./factory_api";
+import { handleMakeApi } from "./make_api";
 import { handleSite } from "./site";
 import { scheduled as runScheduled } from "./scheduled";
 
@@ -9,6 +10,9 @@ export default {
     const path = url.pathname;
     if (path.startsWith("/api/factory/")) {
       return handleFactoryApi(env, request, path);
+    }
+    if (path.startsWith("/api/make/")) {
+      return handleMakeApi(env, request, path);
     }
     if (path === "/privacy" || path === "/terms" || path === "/data-deletion" || path === "/chalisa" || path === "/") {
       return env.ASSETS.fetch(request);

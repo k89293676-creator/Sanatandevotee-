@@ -59,10 +59,11 @@ def plan(pack: str = "shiv_chalisa", days: int = None) -> dict:
     days = days or cfg["scheduling"]["buffer_target_days"]
     init_db()
     conn = connect()
-    slots = cfg["posting"]["start_slots_ist"] + cfg["posting"].get("explore_slots_ist", [])
-    reels_per_day = cfg["posting"]["reels_per_day"]
+    pm = cfg.get("publish", {}).get("make", {})
+    slots = pm.get("slots_ist", cfg["posting"]["start_slots_ist"])
+    reels_per_day = pm.get("max_reels_per_day", cfg["posting"]["reels_per_day"])
+    jitter = 0 if cfg.get("publish", {}).get("backend") == "make_com" else cfg["posting"]["jitter_minutes"]
     min_gap = cfg["scheduling"]["min_gap_hours"]
-    jitter = cfg["posting"]["jitter_minutes"]
     import random
     now_ist = _ist_now()
     # start from tomorrow 06:30

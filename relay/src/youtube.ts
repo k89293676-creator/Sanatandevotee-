@@ -11,6 +11,6 @@ export async function stepYoutube(env: Env): Promise<void> {
   // feasibility: in-Worker streaming not implemented; mark skipped for now
   await sb(env, `/relay_queue?id=eq.${row.id}`, {
     method: "PATCH",
-    body: JSON.stringify({ yt_status: "skipped", last_error: "in-worker streaming not implemented; use private repo fallback" }),
+    body: JSON.stringify({ yt_status: "delegated_to_factory" }),
   });
 }

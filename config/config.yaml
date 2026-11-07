@@ -7,6 +7,17 @@ scheduling:
   max_late_hours: 4
   min_gap_hours: 3
   storage_budget_mb: 800
+publish:
+  backend: make_com
+  make:
+    max_reels_per_day: 2
+    slots_ist: ["06:30", "19:00"]
+    credits_budget_monthly: 800
+    credits_per_run_estimate: 6
+    claim_window_minutes: 10
+    unacked_alert_minutes: 30
+    deadman_minutes: 75
+    insight_piggyback: true
 posting:
   reels_per_day: 2
   start_slots_ist: ["06:30", "19:00"]
@@ -25,6 +36,7 @@ laptop:
   network_wait_minutes: 10
 scaling: {enabled: true, raise_when: {median_completion_ratio_ge: 0.35, reach_trend_14d_not_declining: true, min_posts_observed: 20}, lower_when: {reach_trend_14d_declining_pct_gt: 25}}
 engagement:
+  enabled: false
   comment_mode: poll
   poll_window_hours: 72
   poll_every_minutes: 5
@@ -42,6 +54,8 @@ optimizer:
   reward_weights: {watch_ratio: 0.5, shares_per_reach: 0.25, saves_per_reach: 0.15, follows_proxy: 0.10}
 tokens:
   ig_refresh_every_days: 30
+visuals:
+  providers: [pixabay, wikimedia_commons, pollinations]
 disclosure:
   ai_visuals_note: true
 dm_keywords: ["CHALISA", "PDF", "AUDIO"]

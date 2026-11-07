@@ -10,6 +10,8 @@ PATTERNS = [
     (re.compile(r"AIza[0-9A-Za-z_-]{35}"), "Google API key"),
     (re.compile(r"sbp_[A-Za-z0-9]{30,}"), "Supabase key"),
     (re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"), "JWT"),
+    (re.compile(r"\d{8}-[0-9a-f]{24,}"), "Pixabay key"),
+    (re.compile(r"mk_[A-Za-z0-9_-]{30,}"), "MAKE_KEY"),
     (re.compile(r"(?i)(api[_-]?key|secret|token|password)\s*[:=]\s*['\"][^'\"]{8,}['\"]"), "generic secret assignment"),
 ]
 
