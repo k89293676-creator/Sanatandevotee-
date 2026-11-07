@@ -66,13 +66,9 @@ def render_reel(uuid: str, audio_path: Path, ass_path: Path, shot_paths: list[Pa
     audio_input = mixed_audio if mixed_audio.exists() else audio_path
     # Final: overlay captions (ASS) + vignette + badge text
     # Use subtitles filter with ass file
-    vf = (f"subtitles={ass_path.as_posix()}:force_style='FontName=Noto Sans Devanagari',"
-          f"vignette=PI/4")
-    # Add series badge via drawtext (best effort; font path)
+    vf = f"subtitles={ass_path.as_posix()}:fontsdir=assets/fonts"
     font_path = project_root() / "assets" / "fonts" / "NotoSansDevanagari-Bold.ttf"
-    if font_path.exists():
-        vf += (f",drawtext=fontfile={font_path.as_posix()}:text='{series_badge}':"
-               f"fontsize=28:fontcolor=white:x=40:y=60:box=1:boxcolor=black@0.4:boxborderw=8")
+    # skip drawtext badge for now (added in polish) to keep filter valid
     cmd = [FFMPEG, "-y", "-i", str(base_video), "-i", str(audio_input),
            "-vf", vf, "-c:v", "libx264", "-preset", "medium", "-crf", "23",
            "-maxrate", "3.5M", "-bufsize", "7M", "-c:a", "aac", "-b:a", "128k",
