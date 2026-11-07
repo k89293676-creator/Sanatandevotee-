@@ -1,0 +1,52 @@
+timezone: Asia/Kolkata
+scheduling:
+  mode: cloud_relay          # cloud_relay | dry_run
+  buffer_target_days: 10
+  buffer_min_days: 3
+  reserve_reels: 6
+  max_late_hours: 4
+  min_gap_hours: 3
+  storage_budget_mb: 800
+posting:
+  reels_per_day: 2
+  start_slots_ist: ["06:30", "19:00"]
+  explore_slots_ist: ["12:30", "21:30"]
+  jitter_minutes: 12
+  max_reels_per_day_hard_cap: 4
+  min_video_seconds: 28
+  max_video_seconds: 58
+laptop:
+  render_on_battery: false
+  min_battery_pct: 50
+  cpu_priority: below_normal
+  max_ffmpeg_threads: auto_half
+  prevent_sleep_while_working: true
+  tick_minutes: 15
+  network_wait_minutes: 10
+scaling: {enabled: true, raise_when: {median_completion_ratio_ge: 0.35, reach_trend_14d_not_declining: true, min_posts_observed: 20}, lower_when: {reach_trend_14d_declining_pct_gt: 25}}
+engagement:
+  comment_mode: poll
+  poll_window_hours: 72
+  poll_every_minutes: 5
+  reply_delay_seconds: [45, 420]
+  max_replies_per_hour: 25
+  max_dms_per_hour: 20
+  skip_if_contains_link: true
+content:
+  series_name: "Shiv Chalisa"
+  pack: shiv_chalisa
+  language: hi
+optimizer:
+  min_samples_per_arm: 8
+  exploration_floor: 0.20
+  reward_weights: {watch_ratio: 0.5, shares_per_reach: 0.25, saves_per_reach: 0.15, follows_proxy: 0.10}
+tokens:
+  ig_refresh_every_days: 30
+disclosure:
+  ai_visuals_note: true
+dm_keywords: ["CHALISA", "PDF", "AUDIO"]
+arm_types: ["hook_style","format","slot","visual_style","voice"]
+hook_styles: ["question","benefit","story_tease","fear_to_courage","curiosity"]
+formats: ["meaning","story","when","recital"]
+visual_styles: ["cosmic_blue","ash_monochrome","golden_diya","himalaya_dawn","forest_night"]
+voices: ["madhur","swara"]

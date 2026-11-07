@@ -1,0 +1,38 @@
+# Secrets
+.env
+.env.*
+!.env.example
+.dev.vars
+*.token
+*.key
+tokens/
+backups/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Node / wrangler
+node_modules/
+.wrangler/
+dist/
+
+# Media / data (large, regenerable)
+media/
+logs/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

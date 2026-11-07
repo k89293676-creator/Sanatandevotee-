@@ -1,0 +1,6 @@
+#!/bin/sh
+python scripts/secret_scan.py
+if [ $? -ne 0 ]; then
+  echo "secret scan failed; commit blocked"
+  exit 1
+fi
