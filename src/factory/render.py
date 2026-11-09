@@ -185,6 +185,108 @@ def build_audio(spec: RenderSpec, work: Path, total: float) -> Path:
     return out
 
 
+# ---------------------------------------------------------------- scoring
+# Component weights sum to 1.0. Each component is measured from the produced artifacts.
+QUALITY_WEIGHTS = {
+    "coverage": 0.30,   # narration words that actually made it into caption cues
+    "sync": 0.15,       # caption cue starts vs TTS word boundaries
+    "visual": 0.20,     # frame variance + real background cuts
+    "audio": 0.10,      # measured integrated loudness vs -14 LUFS
+    "validate": 0.15,   # fraction of hard delivery checks that pass
+    "diversity": 0.10,  # distinct assets and non-procedural share
+}
+
+
+def _cue_word_starts(timings: List[dict]) -> tuple[List[int], int]:
+    idx, starts = 0, []
+    for t in timings:
+        starts.append(idx)
+        idx += len(str(t.get("text", "")).split())
+    return starts, idx
+
+
+def score_render(mp4: Path, manifest: dict, timings: List[dict], spec: RenderSpec, shots: List[dict]) -> dict:
+    """Compute quality from the encoded file and the produced timeline. No hard-coded scores.
+
+    Returns keys merged into the manifest: quality_score (0-100), visual_score (0-100),
+    sync_median_s / sync_max_s (seconds, None when unmeasurable), and a `metrics` audit block.
+    """
+    import difflib
+    import statistics
+
+    try:
+        v = validate(Path(mp4), manifest, profile=spec.profile)
+    except Exception as e:                                    # never fail a render over scoring
+        log.warning("scoring skipped: %s", e)
+        return {"quality_score": None, "visual_score": None, "sync_median_s": None,
+                "sync_max_s": None, "metrics": {"error": str(e)}}
+
+    n = max(1, len(shots))
+    ids = [s.get("asset_id") for s in shots]
+    distinct = len({i for i in ids if i}) / n
+    procedural = sum(1 for s in shots if s.get("provider") == "procedural") / n
+
+    # coverage: narration tokens actually present (in order) in the cue text
+    narr_tokens = spec.narration.replace("।", " ").replace("॥", " ").split()
+    cue_tokens = [w for t in timings for w in str(t.get("text", "")).split()]
+    if narr_tokens:
+        sm = difflib.SequenceMatcher(a=narr_tokens, b=cue_tokens, autojunk=False)
+        matched = sum(blk.size for blk in sm.get_matching_blocks())
+        coverage = min(1.0, matched / len(narr_tokens))
+    else:
+        coverage = 0.0
+
+    # sync: cue start vs the TTS boundary start of the cue's first word (only when 1:1)
+    bounds = [b for b in spec.speech.boundaries if b.get("kind") != "SentenceBoundary"]
+    starts, nwords = _cue_word_starts(timings)
+    errs: List[float] = []
+    if bounds and len(bounds) == nwords and len(starts) == len(timings):
+        errs = [abs(float(t["start"]) - float(bounds[i]["start"])) for t, i in zip(timings, starts)]
+        sync_source = "measured"
+    else:
+        sync_source = "unmeasured"
+    sync_med = round(statistics.median(errs), 3) if errs else None
+    sync_max = round(max(errs), 3) if errs else None
+    # 0.5 s median drift = 0 score. Unmeasured timing is a real (if unquantified) weakness.
+    sync = max(0.0, 1.0 - (sync_med or 0.0) / 0.5) if errs else 0.5
+
+    var_s = min(1.0, float(v.get("frame_std_mean") or 0.0) / 45.0)
+    cut_s = min(1.0, float(v.get("scene_changes") or 0) / max(1, n - 1))
+    visual = 0.6 * var_s + 0.4 * cut_s
+
+    lufs = v.get("lufs")
+    audio = max(0.0, 1.0 - abs(float(lufs) + 14.0) / 6.0) if lufs is not None else 0.0
+
+    checks = v.get("checks") or {}
+    passed = sum(1 for ok in checks.values() if ok)
+    validate_s = passed / len(checks) if checks else 0.0
+
+    diversity = 0.6 * distinct + 0.4 * (1.0 - procedural)
+
+    comp = {"coverage": coverage, "sync": sync, "visual": visual, "audio": audio,
+            "validate": validate_s, "diversity": diversity}
+    quality = round(100 * sum(QUALITY_WEIGHTS[k] * comp[k] for k in QUALITY_WEIGHTS))
+    return {
+        "quality_score": quality,
+        "visual_score": round(100 * visual),
+        "sync_median_s": sync_med,
+        "sync_max_s": sync_max,
+        "metrics": {
+            "components": {k: round(val, 3) for k, val in comp.items()},
+            "weights": QUALITY_WEIGHTS,
+            "distinct_asset_ratio": round(distinct, 3),
+            "procedural_ratio": round(procedural, 3),
+            "scene_changes": v.get("scene_changes"),
+            "frame_std_mean": v.get("frame_std_mean"),
+            "lufs": lufs,
+            "sync_source": sync_source,
+            "checks_passed": passed,
+            "checks_total": len(checks),
+            "validate_ok": v.get("ok"),
+        },
+    }
+
+
 # ---------------------------------------------------------------- main
 def render_reel(spec: RenderSpec) -> dict:
     """Returns the manifest dict (also written to media/renders/<uuid>.json). Raises on hard failure."""
@@ -280,8 +382,6 @@ def render_reel(spec: RenderSpec) -> dict:
     cover = media_dir() / "covers" / f"{spec.uuid}.jpg"
     _run([FFMPEG, "-y", "-ss", "0.8", "-i", str(mp4.resolve()), "-frames:v", "1", "-q:v", "2", str(cover.resolve())], work)
 
-    # quality score (0-100): script 30 + sync 15 + visual 20 + audio 10 + validate 15 + diversity 10
-    quality_score = 30 + 15 + 20 + 10 + 15 + 10  # base; refine with real metrics
     manifest = {
         "uuid": spec.uuid, "mp4": str(mp4), "cover": str(cover), "profile": spec.profile, "style": spec.style,
         "strategy": getattr(spec, "strategy", spec.style),
@@ -290,8 +390,10 @@ def render_reel(spec: RenderSpec) -> dict:
         "total_s": total, "audio_s": spec.speech.duration, "tts_engine": spec.speech.engine, "timing_method": method,
         "shots": [{k: (str(v) if isinstance(v, Path) else v) for k, v in s.items()} for s in shots],
         "fonts": [fonts.DEVANAGARI[0], fonts.LATIN[0]], "shaping": "complex", "stages_s": stages, "render_s": round(time.time() - t_start, 1),
-        "quality_score": quality_score, "visual_score": 80, "sync_median_s": 0.1, "sync_max_s": 0.3,
     }
+    # Every score below is measured from the encoded file / produced assets (no constants).
+    quality = score_render(mp4, manifest, timings, spec, shots)
+    manifest.update(quality)
     (out_dir / f"{spec.uuid}.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     log.info("rendered %s in %.1fs", spec.uuid, manifest["render_s"])
     return manifest

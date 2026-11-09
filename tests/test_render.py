@@ -1,6 +1,7 @@
 import json, shutil, sys
 from pathlib import Path
 import pytest
+pytestmark = pytest.mark.heavy
 sys.path.insert(0, str(Path(__file__).parent))
 from make_fake_voice import make
 
@@ -67,6 +68,12 @@ def test_full_render_and_validate(tmp_path):
     contact_sheet(out, Path("media/contact_t1.png"))
     assert v["ok"], v["checks"]
     assert abs(v["dur"] - (spec.speech.duration + 1.0)) < 0.5     # real audio length, not truncated
+    # scores must be derived, never the old hard-coded 100 / 80 / 0.1
+    assert man["quality_score"] is not None and 0 <= man["quality_score"] <= 100
+    assert (man["quality_score"], man["visual_score"], man["sync_median_s"]) != (100, 80, 0.1)
+    assert man["metrics"]["components"]["coverage"] > 0.9
+    assert man["metrics"]["checks_total"] == len(v["checks"])
+    assert man["metrics"]["sync_source"] in ("measured", "unmeasured")
 
 
 def test_validate_fails_for_the_right_reason(tmp_path):
