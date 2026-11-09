@@ -18,6 +18,31 @@ PATTERNS = [
 SKIP_EXT = {".png", ".jpg", ".jpeg", ".mp3", ".mp4", ".wav", ".pdf", ".ttf", ".woff", ".woff2", ".pyc"}
 SKIP_DIRS = {".git", "node_modules", ".wrangler", "media", "logs"}
 
+# Test fixtures use obviously-fake values that match the real key shapes (e.g. the
+# `mk_` Make key prefix). They are deliberate placeholders, not secrets. We allowlist
+# by exact value and by test file so CI stays green without weakening production scans.
+FIXTURE_VALUES = {
+    "mk_test123456789012345678901234567890",
+}
+FIXTURE_PATH_PARTS = {"tests", "test", "__fixtures__", "fixtures"}
+FIXTURE_NAME_MARKERS = ("test", "fixture", "dummy", "sample")
+PLACEHOLDER_MARKERS = ("test", "fake", "dummy", "example", "placeholder", "changeme", "xxxx")
+
+
+def _is_fixture(p: Path, value: str) -> bool:
+    if value in FIXTURE_VALUES:
+        return True
+    name = p.name.lower()
+    in_test_dir = any(part in FIXTURE_PATH_PARTS for part in p.parts[:-1])
+    if in_test_dir and any(m in name for m in FIXTURE_NAME_MARKERS):
+        return True
+    if any(s in name for s in (".test.", ".spec.")):
+        return True
+    # generic placeholder tokens (never part of a real provider-issued key)
+    low = value.lower()
+    return any(m in low for m in PLACEHOLDER_MARKERS)
+
+
 def scan_tree() -> list:
     hits = []
     for p in ROOT.rglob("*"):
@@ -33,6 +58,8 @@ def scan_tree() -> list:
             continue
         for pat, name in PATTERNS:
             for m in pat.finditer(text):
+                if _is_fixture(p, m.group(0)):
+                    continue
                 hits.append((str(p.relative_to(ROOT)), name, m.group(0)[:12] + "..."))
     return hits
 
