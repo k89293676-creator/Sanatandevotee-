@@ -14,6 +14,10 @@ export interface Env {
   YOUTUBE_CLIENT_ID?: string;
   YOUTUBE_CLIENT_SECRET?: string;
   YOUTUBE_REFRESH_TOKEN?: string;
+  // Feature flags (config.yaml is not shipped to the Worker, so these mirror it).
+  // Defaults are deliberately conservative: direct Graph publishing is OFF.
+  PUBLISH_BACKEND?: string;      // "make_com" (default) | "business_suite_manual" | "graph_api"
+  ENGAGEMENT_ENABLED?: string;   // "true" only when engagement replies/DMs are approved
 }
 
 export async function sb(env: Env, path: string, init?: RequestInit) {
@@ -38,4 +42,35 @@ export async function sbRpc(env: Env, fn: string, body: any) {
     },
     body: JSON.stringify(body),
   });
+}
+
+/** Read a boolean-ish relay_state key, falling back to a default when missing/unreadable. */
+export async function stateFlag(env: Env, key: string, def: boolean): Promise<boolean> {
+  try {
+    const r = await sb(env, `/relay_state?key=eq.${encodeURIComponent(key)}&select=value`);
+    const rows = r.ok ? (await r.json()) as any[] : [];
+    if (!rows.length) return def;
+    const v = rows[0].value;
+    if (typeof v === "boolean") return v;
+    if (typeof v === "string") return v.toLowerCase() === "true";
+    if (v && typeof v === "object" && "enabled" in v) return !!v.enabled;
+    return def;
+  } catch {
+    return def;
+  }
+}
+
+/** Read a string-ish relay_state key (e.g. publish_backend), falling back to a default. */
+export async function stateString(env: Env, key: string, def: string): Promise<string> {
+  try {
+    const r = await sb(env, `/relay_state?key=eq.${encodeURIComponent(key)}&select=value`);
+    const rows = r.ok ? (await r.json()) as any[] : [];
+    if (!rows.length) return def;
+    const v = rows[0].value;
+    if (typeof v === "string") return v;
+    if (v && typeof v === "object" && typeof v.value === "string") return v.value;
+    return def;
+  } catch {
+    return def;
+  }
 }
