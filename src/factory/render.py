@@ -203,11 +203,11 @@ def _shot_clip(work: Path, i: int, asset: Path, kind: str, L: float, style: str,
             x, y = f"(iw-ow)*0.5", f"(ih-oh)*(1-t/{L:.3f})"
             vf = f"crop={W}:{H}:x='{x}':y='{y}'"
         elif motion == "zoom_in":
-            vf = (f"crop=w=1350-270*t/{L:.3f}:h=2400-480*t/{L:.3f}"
-                  f":x=(iw-ow)/2:y=(ih-oh)/2")
+            vf = (f"scale=w=max(1080\\,floor(1350-270*t/{L:.3f})):h=max(1920\\,floor(2400-480*t/{L:.3f})):eval=frame,"
+                  f"crop=1080:1920:(iw-ow)/2:(ih-oh)/2")
         elif motion == "zoom_out":
-            vf = (f"crop=w=1080+270*t/{L:.3f}:h=1920+480*t/{L:.3f}"
-                  f":x=(iw-ow)/2:y=(ih-oh)/2")
+            vf = (f"scale=w=min(1350\\,floor(1080+270*t/{L:.3f})):h=min(2400\\,floor(1920+480*t/{L:.3f})):eval=frame,"
+                  f"crop=1080:1920:(iw-ow)/2:(ih-oh)/2")
         elif motion == "drift_down":
             x, y = f"(iw-ow)*t/{L:.3f}", f"(ih-oh)*t/{L:.3f}"
             vf = f"crop={W}:{H}:x='{x}':y='{y}'"
@@ -220,8 +220,13 @@ def _shot_clip(work: Path, i: int, asset: Path, kind: str, L: float, style: str,
         vf = f"{vf},fps=30,{grade},format=yuv420p"
         cmd = [FFMPEG, "-y", "-threads", "1", "-loop", "1", "-framerate", "30", "-i", pre.name, "-t", f"{L:.3f}", "-vf", vf]
     else:                                       # stock video: fill_blur layout handles landscape clips
+        if motion in ("drift_down", "diagonal", "pan_lr", "pan_rl"):
+            ox = f"(W-w)/2+24*sin(2*PI*t/{L:.3f})"
+            oy = f"(H-h)/2+12*cos(2*PI*t/{L:.3f})"
+        else:
+            ox, oy = "(W-w)/2", "(H-h)/2"
         fc = (f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=30:5[bg];"
-              f"[0:v]scale={W}:-2:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,"
+              f"[0:v]scale={W}:-2:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay={ox}:{oy},"
               f"fps=30,{grade},format=yuv420p[v]")
         cmd = [FFMPEG, "-y", "-threads", "1", "-stream_loop", "-1", "-i", asset.name, "-t", f"{L:.3f}",
                "-filter_complex", fc, "-map", "[v]", "-an"]
