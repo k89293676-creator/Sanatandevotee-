@@ -11,4 +11,4 @@ scipy>=1.11
 pyyaml>=6.0
 weasyprint>=62.0
 fonttools>=4.50
-pytest>=8
+google-auth-oauthlib>=1.2
