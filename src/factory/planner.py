@@ -123,10 +123,10 @@ def plan(pack: str = "shiv_chalisa", days: int = None) -> dict:
                 if not conn.execute("SELECT 1 FROM reels WHERE verse_id=? AND format=? AND is_reserve=1", (v["id"], fmt)).fetchone():
                     uid = str(uuid.uuid4())
                     conn.execute(
-                        """INSERT INTO reels (uuid,verse_id,script_id,format,hook_idx,hook_style,voice,visual_style,slot_label,series_day,is_reserve,status)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        """INSERT INTO reels (uuid,verse_id,script_id,format,hook_idx,hook_style,voice,visual_style,slot_label,series_day,is_reserve,scheduled_at_utc,status)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                         (uid, v["id"], scripts[(v["id"], fmt)]["id"], fmt, 0, hook_style, voice,
-                         visual_style, "reserve", None, 1, "planned"),
+                         visual_style, "reserve", None, 1, None, "planned"),
                     )
                     ri += 1
                     existing_reserve += 1
@@ -198,7 +198,7 @@ def plan(pack: str = "shiv_chalisa", days: int = None) -> dict:
             uid = str(uuid.uuid4())
             conn.execute(
                 """INSERT INTO reels (uuid,verse_id,script_id,format,hook_idx,hook_style,voice,visual_style,slot_label,series_day,is_reserve,scheduled_at_utc,status)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (uid, v["id"], scripts[(v["id"], fmt)]["id"], fmt, 0, hook_style,
                  voice, visual_style, slot, series_day, 0, utc.isoformat(), "planned"),
             )
