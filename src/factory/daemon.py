@@ -100,7 +100,7 @@ def tick(relay_url: str):
         log.info("buffer_days=%s", st.get("buffer_days"))
     # content job: ensure script bank (only for verified units)
     try:
-        from . import content_engine, verses
+        from . import content_engine, script_store, verses
         vs = verses.get_verses("shiv_chalisa")
         verified = [v for v in vs if v.get("verified_flag") == 1]
         for v in verified[:1]:  # one per tick
@@ -108,7 +108,9 @@ def tick(relay_url: str):
                 try:
                     s = content_engine.generate_script(v, fmt)
                     if s:
-                        log.info("generated script %s/%s", v["id"], fmt)
+                        sid = script_store.save_script(v, fmt, s)
+                        log.info("generated script %s/%s -> id %s (score %s)", v["id"], fmt, sid,
+                                 (s.get("score") or {}).get("total"))
                 except Exception as e:
                     log.error("gen err %s", e)
     except Exception as e:
