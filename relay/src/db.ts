@@ -15,6 +15,13 @@ export interface Env {
   YOUTUBE_CLIENT_SECRET?: string;
   YOUTUBE_REFRESH_TOKEN?: string;
   YOUTUBE_ENABLED?: string;      // "true" only when YouTube delegation is approved
+  // Make.com state-machine tuning (mirrors config.yaml publish.make; env wins).
+  MAKE_CLAIM_WINDOW_MINUTES?: string;
+  MAKE_UNACKED_ALERT_MINUTES?: string;
+  MAKE_DEADMAN_MINUTES?: string;
+  MAKE_CREDITS_BUDGET_MONTHLY?: string;
+  MAKE_CREDITS_PER_RUN?: string;
+  MAKE_MAX_CALLS_PER_MINUTE?: string;
   // Feature flags (config.yaml is not shipped to the Worker, so these mirror it).
   // Defaults are deliberately conservative: direct Graph publishing is OFF.
   PUBLISH_BACKEND?: string;      // "make_com" (default) | "business_suite_manual" | "graph_api"

@@ -3,6 +3,7 @@ import { now } from "./clock";
 import { stepPublisher } from "./publisher";
 import { stepEngage } from "./engage";
 import { stepYoutube } from "./youtube";
+import { checkMakeHealth } from "./make_health";
 import { telegram, dedupeAlert } from "./alerts";
 import { sb, stateFlag, stateString } from "./db";
 
@@ -35,7 +36,11 @@ export async function scheduled(env: Env, event: ScheduledEvent): Promise<void> 
       await env.TOKENS.put("last_engage", String(nowMs));
     }
   }
-  // 6. alerts.step: buffer check
+  // 6. Make.com health: unacked handoffs and the dead-man ping (make_api path only).
+  if (backend === "make_com" && postingOn) {
+    try { await checkMakeHealth(env); } catch (e) { await telegram(env, "Make health error: " + String(e)); }
+  }
+  // 7. alerts.step: buffer check
   const q = await sb(env, "/relay_queue?select=scheduled_at,status");
   const rows = q.ok ? await q.json() as any : [];
   const future = rows.filter((r: any) => r.status === "scheduled").map((r: any) => new Date(r.scheduled_at).getTime());
