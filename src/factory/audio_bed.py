@@ -33,15 +33,23 @@ def generate(duration: float = 40.0, seed: int = 0, sr: int = 44100) -> Path:
         waveb = 0.12 * np.sin(2 * np.pi * freq * np.arange(length) / sr) * env
         bells[idx:idx+length] += waveb
     mix = drone + bells
-    # normalize to -14 LUFS approx (simple peak norm)
+    # normalize background to about -28 LUFS (scale to low volume)
     peak = np.max(np.abs(mix)) or 1
-    mix = mix / peak * 0.6
+    mix = mix / peak * 0.04  # ~-28 dB
+    # fade in 1.5s, fade out 2.0s
+    fi = int(1.5 * sr)
+    fo = int(2.0 * sr)
+    if fi < len(mix):
+        mix[:fi] *= np.linspace(0, 1, fi)
+    if fo < len(mix):
+        mix[-fo:] *= np.linspace(1, 0, fo)
     out = OUT / f"bed_{seed}_{int(duration)}.wav"
     # write wav
+    import array
+    frames = array.array("h", (int(v * 32767) for v in mix))
     with wave.open(str(out), "w") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(sr)
-        for v in mix:
-            w.writeframes(struct.pack("<h", int(v * 32767)))
+        w.writeframes(frames.tobytes())
     return out

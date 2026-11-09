@@ -76,9 +76,26 @@ def weights() -> dict:
     return out
 
 
+def compute_reward(insight: dict, baseline: float = 1.0) -> float:
+    # reward weights from config
+    w = cfg.get("optimizer", {}).get("reward_weights", {"watch_ratio": 0.5, "shares_per_reach": 0.25, "saves_per_reach": 0.15, "follows_proxy": 0.10})
+    watch = insight.get("completion_ratio") or 0
+    reach = max(insight.get("reach") or 1, 1)
+    shares = (insight.get("shares") or 0) / reach
+    saves = (insight.get("saves") or 0) / reach
+    reward = (w.get("watch_ratio", 0.5) * watch +
+              w.get("shares_per_reach", 0.25) * shares +
+              w.get("saves_per_reach", 0.15) * saves)
+    # normalize to baseline
+    if baseline > 0:
+        reward = reward / baseline
+    return min(max(reward, 0), 1)
+
+
 def run_optimizer() -> dict:
-    # placeholder: compute weights and store in kv
     ensure_arms()
+    # exploration floor: 20% of choices are random
+    floor = cfg.get("optimizer", {}).get("exploration_floor", 0.20)
     w = weights()
     init_db()
     conn = connect()
@@ -86,4 +103,4 @@ def run_optimizer() -> dict:
                  ("weights", json.dumps(w)))
     conn.commit()
     conn.close()
-    return {"weights": w}
+    return {"weights": w, "exploration_floor": floor}

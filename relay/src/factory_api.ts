@@ -56,8 +56,25 @@ export async function handleFactoryApi(env: Env, request: Request, path: string)
     return new Response(null, { status: r.ok ? 201 : 500 });
   }
   if (path === "/api/factory/upload-url" && request.method === "POST") {
-    // return a signed URL placeholder (Supabase storage signed upload)
-    return json({ url: env.SUPABASE_URL + "/storage/v1/object/..." });
+    const body = await request.json() as any;
+    const filename = body.filename || "video.mp4";
+    const objectPath = `reels/${body.uuid || crypto.randomUUID()}/${filename}`;
+    const base = env.SUPABASE_URL.replace(/\/$/, "");
+    const signUrl = base + "/storage/v1/object/upload/sign/media/" + objectPath;
+    const r = await fetch(signUrl, {
+      method: "POST",
+      headers: {
+        "apikey": env.SUPABASE_SERVICE_KEY,
+        "Authorization": "Bearer " + env.SUPABASE_SERVICE_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ expiresIn: 300 }),
+    });
+    if (!r.ok) return new Response("storage error", { status: 500 });
+    const j: any = await r.json();
+    const signed = base + (j.url || "");
+    const publicUrl = base + "/storage/v1/object/public/media/" + objectPath;
+    return json({ url: signed, public_url: publicUrl, path: objectPath });
   }
   if (path === "/api/factory/heartbeat" && request.method === "POST") {
     await sb(env, "/relay_state", {
@@ -66,6 +83,33 @@ export async function handleFactoryApi(env: Env, request: Request, path: string)
       body: JSON.stringify({ key: "laptop_last_seen", value: { ts: now().toISOString() } }),
     });
     return new Response(null, { status: 204 });
+  }
+  if (path === "/api/factory/selfcheck" && request.method === "GET") {
+    // supabase check
+    let supabase_ok = false;
+    try {
+      const r = await sb(env, "/relay_state?limit=1");
+      supabase_ok = r.ok;
+    } catch (e) { supabase_ok = false; }
+    // kv check
+    let kv_ok = false;
+    try {
+      await env.TOKENS.get("ping");
+      kv_ok = true;
+    } catch (e) { kv_ok = false; }
+    // telegram check
+    let telegram_ok = false;
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getMe`);
+      telegram_ok = r.ok;
+    } catch (e) { telegram_ok = false; }
+    return json({
+      supabase_ok,
+      kv_ok,
+      telegram_ok,
+      make_key_set: !!env.MAKE_KEY && env.MAKE_KEY.length >= 20,
+      make_key_length_bucket: (env.MAKE_KEY || "").length < 20 ? "too_short" : "ok",
+    });
   }
   if (path === "/api/factory/weights" && request.method === "POST") {
     const body = await request.json();

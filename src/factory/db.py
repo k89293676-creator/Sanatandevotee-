@@ -99,6 +99,62 @@ CREATE TABLE IF NOT EXISTS events (
   component TEXT NOT NULL,
   message TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS llm_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL DEFAULT (datetime('now')),
+  model TEXT,
+  purpose TEXT,
+  prompt_tokens INTEGER,
+  completion_tokens INTEGER,
+  status TEXT,
+  latency_ms INTEGER
+);
+CREATE TABLE IF NOT EXISTS llm_cache (
+  key_sha256 TEXT PRIMARY KEY,
+  model TEXT,
+  response_json TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS knowledge_cards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  element TEXT UNIQUE,
+  notes TEXT,
+  confidence REAL,
+  source_url TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS unit_cards (
+  unit_id INTEGER,
+  card_id INTEGER,
+  PRIMARY KEY (unit_id, card_id)
+);
+CREATE TABLE IF NOT EXISTS glossary (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  unit_id INTEGER,
+  word TEXT,
+  meaning_hi TEXT
+);
+CREATE TABLE IF NOT EXISTS script_scores (
+  script_id INTEGER PRIMARY KEY,
+  total INTEGER,
+  hook INTEGER,
+  faithfulness INTEGER,
+  clarity INTEGER,
+  language INTEGER,
+  structure INTEGER,
+  uniqueness INTEGER,
+  hard_gates_json TEXT,
+  reasons_json TEXT,
+  judge_model TEXT
+);
+CREATE TABLE IF NOT EXISTS gen_failures (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL DEFAULT (datetime('now')),
+  verse_id INTEGER,
+  format TEXT,
+  reason TEXT,
+  http_status INTEGER
+);
 """
 
 

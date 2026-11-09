@@ -16,10 +16,10 @@ def test_db_init():
     conn.close()
 
 def test_captions():
-    from src.factory.captions import proportional_timings, build_ass
-    t = proportional_timings("a b c d e f", 10.0, max_words=2)
-    assert len(t) == 3
-    ass = build_ass(t)
+    from src.factory.captions import split_chunks, proportional_timings, build_ass
+    chunks = split_chunks("a b c d e f", max_words=2)
+    t = proportional_timings(chunks, 10.0)
+    ass = build_ass(t, 10.0, "hook", "badge", ["cta"], {"accent": "&H0040B0FF"})
     assert "Dialogue" in ass
 
 def test_optimizer():

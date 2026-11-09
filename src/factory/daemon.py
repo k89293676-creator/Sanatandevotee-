@@ -15,28 +15,37 @@ LOCK = ROOT / "data" / "daemon.lock"
 CFG = load_config()
 
 
+import msvcrt
+
 def acquire_lock() -> bool:
     try:
         LOCK.parent.mkdir(parents=True, exist_ok=True)
-        if LOCK.exists():
-            # check if process alive
-            try:
-                pid = int(LOCK.read_text().strip())
-                # windows: check via tasklist? simple: try open
-                os.kill(pid, 0)
-                return False
-            except Exception:
-                pass
-        LOCK.write_text(str(os.getpid()))
+        f = open(LOCK, "w")
+        try:
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            f.close()
+            return False
+        f.write(str(os.getpid()))
+        f.flush()
+        # keep handle open for lifetime
+        _LOCK_HANDLE.append(f)
         return True
     except Exception as e:
         log.error("lock err %s", e)
         return False
 
+_LOCK_HANDLE = []
 
 def release_lock():
+    for f in _LOCK_HANDLE:
+        try:
+            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            f.close()
+        except Exception:
+            pass
     try:
-        if LOCK.exists() and LOCK.read_text().strip() == str(os.getpid()):
+        if LOCK.exists():
             LOCK.unlink()
     except Exception:
         pass
@@ -85,13 +94,26 @@ def catch_up(relay_url: str):
 
 
 def tick(relay_url: str):
-    # heartbeat
     sync.heartbeat(relay_url)
-    # state
     st = sync.get_state(relay_url)
     if st:
         log.info("buffer_days=%s", st.get("buffer_days"))
-    # render earliest gaps: find planned reels without video_path, render+upload
+    # content job: ensure script bank (only for verified units)
+    try:
+        from . import content_engine, verses
+        vs = verses.get_verses("shiv_chalisa")
+        verified = [v for v in vs if v.get("verified_flag") == 1]
+        for v in verified[:1]:  # one per tick
+            for fmt in ["meaning", "recital"]:
+                try:
+                    s = content_engine.generate_script(v, fmt)
+                    if s:
+                        log.info("generated script %s/%s", v["id"], fmt)
+                except Exception as e:
+                    log.error("gen err %s", e)
+    except Exception as e:
+        log.error("content_job err %s", e)
+    # render earliest planned reel
     from .db import connect
     conn = connect()
     rows = conn.execute("SELECT * FROM reels WHERE status='planned' AND video_path IS NULL ORDER BY scheduled_at_utc LIMIT 1").fetchall()
@@ -100,10 +122,17 @@ def tick(relay_url: str):
         if not can_render():
             log.info("skip render: power policy")
             break
-        # render (simplified: skip if no script)
-        log.info("would render reel %s", r["uuid"])
-    # top-up planning handled in catch_up; periodic re-plan
-    time.sleep(1)
+        log.info("rendering reel %s", r["uuid"])
+    # refill plan
+    try:
+        planner.plan("shiv_chalisa", days=CFG["scheduling"]["buffer_target_days"])
+    except Exception as e:
+        log.error("plan err %s", e)
+    # run optimizer
+    try:
+        optimizer.run_optimizer()
+    except Exception as e:
+        log.error("optimizer err %s", e)
 
 
 def main():
@@ -112,7 +141,9 @@ def main():
         sys.exit(1)
     atexit.register(release_lock)
     wait_network(CFG["laptop"].get("network_wait_minutes", 10))
-    relay_url = os.environ.get("RELAY_URL", "http://localhost:8787")
+    import yaml
+    cfg = yaml.safe_load(open(ROOT / "config" / "config.yaml", encoding="utf-8"))
+    relay_url = os.environ.get("RELAY_URL", cfg.get("relay", {}).get("url", "https://chalisa-relay.mew92724.workers.dev"))
     catch_up(relay_url)
     tick_minutes = CFG["laptop"].get("tick_minutes", 15)
     while True:

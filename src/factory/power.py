@@ -29,10 +29,6 @@ def is_on_battery() -> bool:
             return False
     # linux
     try:
-        p = Path("/sys/class/power_supply/BAT0/status") if False else None
-    except Exception:
-        pass
-    try:
         from pathlib import Path
         st = Path("/sys/class/power_supply/BAT0/status")
         if st.exists():

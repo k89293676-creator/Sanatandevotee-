@@ -8,7 +8,7 @@ def task_xml(pythonw: str, script: str, project: str) -> str:
   <RegistrationInfo><Description>Chalisa factory daemon</Description></RegistrationInfo>
   <Triggers>
     <LogonTrigger><Enabled>true</Enabled></LogonTrigger>
-    <TimeTrigger><Repetition><Interval>PT30M</Interval><Duration>P1D</Duration></Repetition><StartBoundary>2025-01-01T00:00:00</StartBoundary><Enabled>true</Enabled></TimeTrigger>
+    <TimeTrigger><Repetition><Interval>PT30M</Interval></Repetition><StartBoundary>2026-01-01T00:00:00</StartBoundary><Enabled>true</Enabled></TimeTrigger>
   </Triggers>
   <Principals><Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings>
@@ -27,7 +27,7 @@ def task_xml(pythonw: str, script: str, project: str) -> str:
   <Actions Context="Author">
     <Exec>
       <Command>{pythonw}</Command>
-      <Arguments>-m factory.daemon</Arguments>
+      <Arguments>-m src.factory.daemon</Arguments>
       <WorkingDirectory>{project}</WorkingDirectory>
     </Exec>
   </Actions>

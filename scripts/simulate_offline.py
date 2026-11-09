@@ -1,12 +1,9 @@
-"""Offline simulation: factory stopped, fake clock advanced 14 days."""
+"""Offline simulation: runs vitest relay suite with fake clock."""
 from __future__ import annotations
-import sys
+import subprocess, sys
 from pathlib import Path
-from datetime import datetime, timedelta, timezone
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-from src.factory.db import connect, init_db
-init_db()
-print("Simulated: relay publishes from buffer, uses reserves after buffer ends,")
-print("sends 3-day, 1-day, empty alerts once, recovers when factory returns.")
-print("PASS (simulated)")
+r = subprocess.run(["cmd", "/c", "node_modules\\.bin\\vitest.cmd", "run"], cwd=ROOT / "relay", capture_output=True, text=True)
+print(r.stdout[-500:] if r.stdout else "")
+print("exit", r.returncode)
+sys.exit(r.returncode)

@@ -33,12 +33,26 @@ def factory_headers(method: str, path: str, body: bytes) -> dict:
     }
 
 
+def request_upload_url(relay_url: str, reel_uuid: str, filename: str) -> str | None:
+    path = "/api/factory/upload-url"
+    body = json.dumps({"uuid": reel_uuid, "filename": filename}).encode()
+    headers = factory_headers("POST", path, body)
+    url = relay_url.rstrip("/") + path
+    try:
+        r = httpx.post(url, content=body, headers=headers, timeout=60)
+        if r.status_code == 200:
+            return r.json().get("url")
+    except Exception as e:
+        log.warning("request_upload_url err %s", e)
+    return None
+
+
 def upload_file(signed_url: str, path: Path) -> bool:
     # resumable-ish: simple PUT with retry
     for attempt in range(3):
         try:
-            with path.open("rb") as f:
-                r = httpx.put(signed_url, content=f, timeout=300)
+            data = path.read_bytes()
+            r = httpx.put(signed_url, content=data, headers={"Content-Type": "video/mp4", "Content-Length": str(len(data))}, timeout=300)
             if r.status_code in (200, 201, 204):
                 return True
             log.warning("upload status %s", r.status_code)
@@ -63,6 +77,22 @@ def enqueue(relay_url: str, payload: dict) -> bool:
             log.warning("enqueue err %s", e)
         time.sleep(2 ** attempt)
     return False
+
+
+def verify_public_url(url: str, expected_size: int) -> bool:
+    try:
+        r = httpx.get(url, headers={"Range": "bytes=0-1023"}, timeout=60)
+        if r.status_code not in (200, 206):
+            return False
+        if "video/mp4" not in r.headers.get("Content-Type", ""):
+            return False
+        # total size check via HEAD
+        h = httpx.head(url, timeout=60)
+        total = int(h.headers.get("Content-Length", 0))
+        return total == expected_size
+    except Exception as e:
+        log.warning("verify_public_url err %s", e)
+        return False
 
 
 def get_state(relay_url: str) -> dict | None:

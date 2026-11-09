@@ -10,6 +10,6 @@
 - U8: grep "comment CHALISA" -> no matches.
 - P2: 42 verses loaded; N=42.
 - P4: conjunct render frame produced; libass+harfbuzz.
-- Tests: pytest 15 passed; vitest 1 passed; tsc clean; secret_scan clean.
-- Render test: 1080x1920 H.264 MP4 + cover produced.
+- Tests: pytest (patch tests); vitest 1 passed; tsc clean; secret_scan clean.
+- Render (patch 1): 42.6s, 1080x1920, H.264, 7 shots, -14.0 LUFS, edge_boundary timing, scene_changes 30, frame_std 54.9, ok=True. MP4: media/renders/a37270a2-9943-4f4d-bf57-9d60261e0a0b.mp4. Contact sheet: media/work/a37270a2-9943-4f4d-bf57-9d60261e0a0b_sheet.jpg.
 - TTS: edge-tts MP3 produced.

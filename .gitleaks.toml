@@ -1,0 +1,8 @@
+[allowlist]
+paths = [
+  '''media/''',
+  '''logs/''',
+  '''node_modules/''',
+  '''.wrangler/''',
+  '''backups/''',
+]

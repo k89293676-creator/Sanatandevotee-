@@ -1,6 +1,6 @@
 """Visuals package."""
 from __future__ import annotations
-import httpx, random, urllib.parse
+import urllib.parse
 from pathlib import Path
 
 def pollinations_url(prompt: str, seed: int, w: int = 1080, h: int = 1920) -> str:
@@ -9,6 +9,7 @@ def pollinations_url(prompt: str, seed: int, w: int = 1080, h: int = 1920) -> st
 
 def download(url: str, dest: Path) -> bool:
     try:
+        import httpx
         with httpx.stream("GET", url, timeout=120, follow_redirects=True) as r:
             if r.status_code != 200:
                 return False

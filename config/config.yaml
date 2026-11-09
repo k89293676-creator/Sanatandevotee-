@@ -1,4 +1,13 @@
 timezone: Asia/Kolkata
+relay:
+  url: "https://chalisa-relay.mew92724.workers.dev"
+llm:
+  provider: groq
+  primary: "qwen/qwen3.8-27b"
+  fallbacks: ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]
+  daily_token_budget: 100000
+  soft_stop_pct: 85
+  max_concurrency: 1
 scheduling:
   mode: cloud_relay          # cloud_relay | dry_run
   buffer_target_days: 10
@@ -55,7 +64,20 @@ optimizer:
 tokens:
   ig_refresh_every_days: 30
 visuals:
-  providers: [pixabay, wikimedia_commons, pollinations]
+  providers: [pixabay, wikimedia_commons, pollinations, procedural]
+  min_shots: 8
+  shot_seconds: [5, 8]
+render:
+  profile: standard
+  crossfade_seconds: 0.4
+  caption:
+    font_size: 68
+    margin_v: 420
+    max_lines: 2
+  loudness:
+    target_lufs: -14
+    tolerance: 2
+  budget_minutes: 15
 disclosure:
   ai_visuals_note: true
 dm_keywords: ["CHALISA", "PDF", "AUDIO"]

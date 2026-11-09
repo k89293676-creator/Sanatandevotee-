@@ -45,6 +45,7 @@ class PixabayProvider:
         if not self.available():
             return []
         q = " ".join(keywords)[:100]
+        FALLBACKS = ["shiva statue", "temple diya light", "himalayas spiritual smoke", "meditation light"]
         cache = _load_cache()
         cache_key = hashlib.sha256(f"{q}|{orientation}|{kind}".encode()).hexdigest()
         entry = cache.get(cache_key)
@@ -66,6 +67,15 @@ class PixabayProvider:
                 return []
             data = r.json()
             hits = data.get("hits", [])
+            if not hits:
+                # fallback to curated devotional terms
+                for fb in FALLBACKS:
+                    params["q"] = fb
+                    r2 = httpx.get(endpoint, params=params, timeout=30)
+                    if r2.status_code == 200:
+                        hits = r2.json().get("hits", [])
+                        if hits:
+                            break
             for h in hits:
                 if kind == "video":
                     vids = h.get("videos", {})

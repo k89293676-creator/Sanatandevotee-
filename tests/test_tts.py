@@ -7,5 +7,5 @@ from src.factory.tts import synthesize
 def test_tts_cache():
     p1 = synthesize("जय शिव", "hi-IN-MadhurNeural")
     p2 = synthesize("जय शिव", "hi-IN-MadhurNeural")
-    assert p1 == p2
-    assert p1.exists()
+    assert p1.path == p2.path
+    assert p1.path.exists()

@@ -5,5 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.factory import sync
-url = os.environ.get("RELAY_URL", "http://localhost:8787")
+import yaml
+cfg = yaml.safe_load(open(ROOT / "config" / "config.yaml", encoding="utf-8"))
+url = os.environ.get("RELAY_URL", cfg.get("relay", {}).get("url", "http://localhost:8787"))
 print(sync.get_state(url))
