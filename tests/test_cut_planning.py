@@ -74,5 +74,6 @@ def test_shot_lengths_sum_to_xfade_chain_total():
 def test_motion_templates_vary_across_shots():
     motions = plan_motions(6, "golden_diya", seed=1)
     assert len(motions) == 6
-    assert all(m in ["pan_lr", "zoom_in", "pan_rl", "zoom_out", "drift_down", "diagonal"] for m in motions)
+    assert all(m in ["pan_lr", "zoom_in", "pan_rl", "zoom_out", "drift_down", "diagonal",
+                     "shake", "pulse", "slide_left"] for m in motions)
     assert len(set(motions)) >= 3
