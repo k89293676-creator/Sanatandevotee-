@@ -17,8 +17,14 @@ def get_chain() -> list:
     return [PROVIDERS[n]() for n in names if n in PROVIDERS]
 
 
-def fetch_asset(keywords: list[str], orientation: str, kind: str, dest: Path, seed: int = 0) -> Asset | None:
-    """Try each provider in order. Failures are logged and skipped; returns None if all fail."""
+def fetch_asset(keywords: list[str], orientation: str, kind: str, dest: Path, seed: int = 0,
+                exclude_ids: set | None = None) -> Asset | None:
+    """Try each provider in order. Failures are logged and skipped; returns None if all fail.
+
+    `exclude_ids` is checked BEFORE download so we never spend a request on an asset we
+    already used in this reel.
+    """
+    excluded = exclude_ids or set()
     for prov in get_chain():
         try:
             if not prov.available():
@@ -28,7 +34,9 @@ def fetch_asset(keywords: list[str], orientation: str, kind: str, dest: Path, se
         except Exception as e:
             log.warning("%s search failed: %s", prov.name, e)
             continue
-        for a in assets[:3]:
+        for a in assets[:10]:
+            if a.asset_id in excluded:
+                continue
             try:
                 if prov.download(a, dest):
                     return a

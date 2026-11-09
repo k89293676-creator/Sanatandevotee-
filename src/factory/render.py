@@ -121,32 +121,54 @@ def _shot_clip(work: Path, i: int, asset: Path, kind: str, L: float, style: str,
 
 
 def gather_shots(spec: RenderSpec, work: Path, n: int) -> List[dict]:
-    """One asset per shot. Provider chain first (video on odd shots when available), procedural as the last resort."""
+    """One distinct asset per shot, with keyword rotation and a flagged duplicate as the last resort.
+
+    Previously the same top Pixabay hit could land in half the shots (or the guard would
+    fall through to procedural for most of them). Now we rotate keywords per shot and
+    ask the provider chain to skip ids already used.
+    """
     from .visuals.chain import fetch_asset
-    shots = []
-    used_ids = set()
+    shots, used = [], set()
+    kws = list(spec.keywords) or ["diya"]
     for i in range(n):
-        kw = spec.keywords[i % len(spec.keywords):] + spec.keywords[:i % len(spec.keywords)]
-        if spec.image_prompts:
-            kw = [spec.image_prompts[i % len(spec.image_prompts)]] if i % 2 == 0 else kw
-        asset, kind, meta = None, "image", {}
-        for k in (["video", "image"] if i % 2 == 1 else ["image"]):
-            dest = work / f"asset_{i}.{'mp4' if k == 'video' else 'jpg'}"
-            try:
-                a = fetch_asset(kw[:3], "vertical", k, dest, seed=spec.seed + i)
-            except Exception as e:
-                log.warning("fetch_asset error: %s", e)
-                a = None
-            if a and dest.exists() and a.asset_id not in used_ids:
-                asset, kind, meta = dest, k, {"provider": a.provider, "asset_id": a.asset_id, "license": a.license,
-                                              "source": a.source_page}
-                used_ids.add(a.asset_id)
+        rot = (2 * i) % len(kws)
+        base = kws[rot:] + kws[:rot]
+        kinds = ["video", "image"] if i % 2 == 1 else ["image"]
+        asset = kind = meta = None
+        duplicate = None
+        for attempt in range(3):
+            kw = list(base[attempt:] + base[:attempt])[:3]
+            if spec.image_prompts:
+                kw = [spec.image_prompts[(i + attempt) % len(spec.image_prompts)]] + kw[:2]
+            for k in kinds:
+                dest = work / f"asset_{i}.{'mp4' if k == 'video' else 'jpg'}"
+                try:
+                    a = fetch_asset(kw, "vertical", k, dest, seed=spec.seed + i * 7 + attempt,
+                                    exclude_ids=used)
+                except Exception as e:
+                    log.warning("fetch_asset error: %s", e)
+                    continue
+                if not a or not dest.exists():
+                    continue
+                info = {"provider": a.provider, "asset_id": a.asset_id, "license": a.license,
+                        "source": a.source_page}
+                if a.asset_id in used:
+                    duplicate = (dest, k, info)
+                    continue
+                asset, kind, meta = dest, k, info
                 break
+            if asset is not None:
+                break
+        if asset is None and duplicate is not None:
+            asset, kind, meta = duplicate
+            meta = {**meta, "duplicate": True}
+            log.warning("shot %d reuses duplicate asset %s (no distinct hit)", i, meta["asset_id"])
         if asset is None:
             asset = work / f"asset_{i}.jpg"
             make_still(asset, spec.style, seed=spec.seed * 10 + i)
-            meta = {"provider": "procedural", "asset_id": f"{spec.style}-{spec.seed * 10 + i}", "license": "own", "source": ""}
-            used_ids.add(meta["asset_id"])
+            meta = {"provider": "procedural", "asset_id": f"{spec.style}-{spec.seed * 10 + i}",
+                    "license": "own", "source": ""}
+        used.add(meta["asset_id"])
         shots.append({"i": i, "path": asset, "kind": kind, **meta})
     return shots
 
