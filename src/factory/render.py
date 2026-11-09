@@ -24,6 +24,7 @@ from .config import media_dir, project_root, load_config
 from .logging_setup import setup_logging
 from .tts import Speech
 from .visuals.procedural import make_still
+from .visuals.providers.base import NEGATIVE_TAGS
 from .visuals.strategies import get_strategy
 
 log = setup_logging("render")
