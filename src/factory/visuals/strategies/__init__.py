@@ -16,6 +16,15 @@ class StockMontage(Strategy):
         return Timeline(shots=shots, strategy=self.name)
     def needs(self): return {"keys": ["pixabay"], "network": True}
 
+class MixedMontage(Strategy):
+    """Default: alternate stock stills and stock video; the chain falls back to procedural per shot."""
+    name = "mixed_montage"
+    def plan(self, spec, n):
+        shots = [Shot(i=i, source=("video" if i % 2 else "image"), duration=4.0,
+                      motion=("cut" if i % 2 else "pan"), overlay="caption") for i in range(n)]
+        return Timeline(shots=shots, strategy=self.name)
+    def needs(self): return {"keys": ["pixabay"], "network": True}
+
 class KineticTypography(Strategy):
     name = "kinetic_typography"
     def plan(self, spec, n):
@@ -54,6 +63,7 @@ class SplitMeaning(Strategy):
 STRATEGIES = {
     "ai_illustrated": AiIllustrated,
     "stock_montage": StockMontage,
+    "mixed_montage": MixedMontage,
     "kinetic_typography": KineticTypography,
     "diya_loop": DiyaLoop,
     "cosmic_sky": CosmicSky,
@@ -62,4 +72,4 @@ STRATEGIES = {
 }
 
 def get_strategy(name: str) -> Strategy:
-    return STRATEGIES.get(name, DiyaLoop)()
+    return STRATEGIES.get(name, MixedMontage)()

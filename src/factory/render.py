@@ -6,6 +6,9 @@ Design decisions (fixed, see UPGRADE v5 section 8):
   * Shots are joined with xfade in ONE graph, which also burns ALL text through libass. Encodes: shots (fast, intermediate)
     and final. Never ffmpeg drawtext (it caused the Devanagari/Latin tofu boxes).
   * Every ffmpeg call runs with cwd=<work dir> and relative file names (avoids Windows filter-path escaping).
+  * Cuts snap to real TTS sentence onsets (min shot length respected); each transition rotates through TRANSITIONS so
+    consecutive joins do not all use the same fade.
+  * The music bed is sidechain-ducked by the voice (sidechaincompress), not just mixed at a fixed low volume.
 """
 from __future__ import annotations
 import json, math, re, shutil, subprocess, time
@@ -21,6 +24,7 @@ from .config import media_dir, project_root, load_config
 from .logging_setup import setup_logging
 from .tts import Speech
 from .visuals.procedural import make_still
+from .visuals.strategies import get_strategy
 
 log = setup_logging("render")
 FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
@@ -29,6 +33,8 @@ TAIL = 1.0
 XFADE = 0.4
 BG_CHANGE = 9.0    # mean abs diff (0-255) on a 12x21 view between consecutive 1 s samples
 W, H = 1080, 1920
+MIN_SHOT_S = 2.5   # keeps a shot readable even when cuts snap to a sentence boundary
+TRANSITIONS = ["fade", "wipeleft", "slideup", "circleopen"]
 
 # colour grade + caption look per visual style. BGR hex for ASS.
 STYLES: Dict[str, dict] = {
@@ -53,7 +59,7 @@ class RenderSpec:
     narration: str                   # exact Devanagari text spoken (captions use this verbatim)
     cta_lines: List[str]
     style: str = "golden_diya"
-    strategy: str = "diya_loop"
+    strategy: str = "mixed_montage"
     archetype: str = "stakes"
     model: str = "groq"
     profile: str = "standard"
@@ -98,6 +104,71 @@ def _prep_still(src: Path, dst: Path, sharpen: bool = True) -> None:
     im.save(dst, quality=93)
 
 
+# ---------------------------------------------------------------- cut timing
+def sentence_starts_from(boundaries, narration: str) -> list[float]:
+    """Sentence onsets from word boundaries + the narration punctuation.
+
+    edge-tts usually emits WordBoundary only, so there is no SentenceBoundary to
+    read. The first word after each `।`/`॥` (or `.`/`!`/`?`) is a real sentence
+    onset and is used as a cut candidate.
+    """
+    tokens = narration.replace("।", " । ").replace("॥", " ॥ ").split()
+    words = [b for b in (boundaries or []) if b.get("kind") != "SentenceBoundary"]
+    starts: list[float] = []
+    bi = 0                                          # boundary index of the CURRENT word
+    for tok in tokens:
+        if tok in ("।", "॥", ".", "!", "?"):        # standalone punctuation: next word starts a sentence
+            if bi < len(words) and "start" in words[bi]:
+                starts.append(float(words[bi]["start"]))
+            continue
+        if tok[-1] in ".!?" and bi + 1 < len(words) and "start" in words[bi + 1]:
+            starts.append(float(words[bi + 1]["start"]))   # "word." carries the boundary itself
+        bi += 1
+    return starts
+
+
+def plan_cut_times(total: float, n: int, sentence_starts, xfade: float = XFADE,
+                   min_shot: float = MIN_SHOT_S) -> list[float]:
+    """Choose n-1 transition start times, snapped to sentence starts when possible.
+
+    Uniform cuts chop sentences in half. This keeps a minimum shot length, prefers
+    real sentence onsets, and falls back to evenly spaced positions when the TTS
+    gave no sentence boundaries.
+    """
+    if n <= 1:
+        return []
+    usable = sorted({round(float(t), 3) for t in (sentence_starts or [])
+                     if min_shot <= float(t) <= total - min_shot})
+    desired = [total * k / n for k in range(1, n)]
+    cuts: list[float] = []
+    for j, want in enumerate(desired, start=1):
+        lo = (cuts[-1] + min_shot) if cuts else min_shot
+        hi = total - min_shot * (n - j)
+        if hi < lo:
+            lo = hi = round(want, 3)
+        options = [c for c in usable if lo <= c <= hi and c not in cuts]
+        chosen = min(options, key=lambda c: abs(c - want)) if options else min(max(want, lo), hi)
+        cuts.append(round(float(chosen), 3))
+    return cuts
+
+
+def shot_lengths(total: float, cuts: list[float], xfade: float = XFADE) -> list[float]:
+    """Clip lengths whose xfade chain lands exactly on `cuts` and ends at `total`."""
+    if not cuts:
+        return [total]
+    lengths = [cuts[0] + xfade]
+    lengths += [cuts[k] - cuts[k - 1] + xfade for k in range(1, len(cuts))]
+    lengths.append(total - cuts[-1])
+    # xfade needs each clip to be longer than the transition itself
+    floor = xfade + 0.05
+    return [max(floor, round(x, 3)) for x in lengths]
+
+
+def plan_transitions(n: int, pan0: int = 0) -> list[str]:
+    """One xfade transition per join, rotated by the style so consecutive joins differ."""
+    return [TRANSITIONS[(pan0 + k) % len(TRANSITIONS)] for k in range(1, n)]
+
+
 def _shot_clip(work: Path, i: int, asset: Path, kind: str, L: float, style: str, direction: int) -> Optional[Path]:
     out = work / f"shot_{i}.mp4"
     grade = STYLES[style]["grade"]
@@ -120,22 +191,49 @@ def _shot_clip(work: Path, i: int, asset: Path, kind: str, L: float, style: str,
     return out if ok and out.exists() else None
 
 
-def gather_shots(spec: RenderSpec, work: Path, n: int) -> List[dict]:
-    """One distinct asset per shot, with keyword rotation and a flagged duplicate as the last resort.
+def _hash_or_none(path: Path) -> Optional[int]:
+    """dHash of a downloaded still; None when the provider returned something unreadable."""
+    from .phash import dhash
+    try:
+        return dhash(path)
+    except Exception as e:                      # corrupt/empty download: dedupe by id only
+        log.warning("hash failed for %s: %s", path.name, e)
+        return None
 
-    Previously the same top Pixabay hit could land in half the shots (or the guard would
-    fall through to procedural for most of them). Now we rotate keywords per shot and
-    ask the provider chain to skip ids already used.
+
+def gather_shots(spec: RenderSpec, work: Path, n: int, timeline=None) -> List[dict]:
+    """One distinct asset per shot, following the strategy plan.
+
+    The plan (visuals/strategies) decides whether a shot wants stock video, an
+    image or a procedural still. Keyword rotation, asset-id exclusion and a
+    perceptual-hash check keep near-duplicate stock hits out of the reel.
     """
+    from .phash import is_duplicate
     from .visuals.chain import fetch_asset
-    shots, used = [], set()
+
+    shots, used, used_hashes = [], set(), []
     kws = list(spec.keywords) or ["diya"]
+    planned = [timeline.shots[i].source if timeline and i < len(timeline.shots) else None for i in range(n)]
+
     for i in range(n):
+        pref = planned[i] or ("video" if i % 2 else "image")
+
+        if pref == "procedural":
+            asset = work / f"asset_{i}.jpg"
+            make_still(asset, spec.style, seed=spec.seed * 10 + i)
+            h = _hash_or_none(asset)
+            if h is not None:
+                used_hashes.append(h)
+            shots.append({"i": i, "path": asset, "kind": "image", "provider": "procedural",
+                          "asset_id": f"{spec.style}-{spec.seed * 10 + i}", "license": "own", "source": ""})
+            continue
+
         rot = (2 * i) % len(kws)
         base = kws[rot:] + kws[:rot]
-        kinds = ["video", "image"] if i % 2 == 1 else ["image"]
+        kinds = [pref] + (["image"] if pref == "video" else ["video"])
         asset = kind = meta = None
         duplicate = None
+        blocked = set(used)                     # rejected duplicates must not be requested again
         for attempt in range(3):
             kw = list(base[attempt:] + base[:attempt])[:3]
             if spec.image_prompts:
@@ -144,7 +242,7 @@ def gather_shots(spec: RenderSpec, work: Path, n: int) -> List[dict]:
                 dest = work / f"asset_{i}.{'mp4' if k == 'video' else 'jpg'}"
                 try:
                     a = fetch_asset(kw, "vertical", k, dest, seed=spec.seed + i * 7 + attempt,
-                                    exclude_ids=used)
+                                    exclude_ids=blocked)
                 except Exception as e:
                     log.warning("fetch_asset error: %s", e)
                     continue
@@ -152,20 +250,31 @@ def gather_shots(spec: RenderSpec, work: Path, n: int) -> List[dict]:
                     continue
                 info = {"provider": a.provider, "asset_id": a.asset_id, "license": a.license,
                         "source": a.source_page}
-                if a.asset_id in used:
-                    duplicate = (dest, k, info)
+                h = _hash_or_none(dest) if k == "image" else None
+                if a.asset_id in used or (h is not None and is_duplicate(h, used_hashes)):
+                    blocked.add(a.asset_id)
+                    duplicate = (dest, k, info, h)
                     continue
                 asset, kind, meta = dest, k, info
+                if h is not None:
+                    used_hashes.append(h)
                 break
             if asset is not None:
                 break
         if asset is None and duplicate is not None:
-            asset, kind, meta = duplicate
+            dest, kind, meta, h = duplicate
+            asset = dest
             meta = {**meta, "duplicate": True}
+            if h is not None:
+                used_hashes.append(h)
             log.warning("shot %d reuses duplicate asset %s (no distinct hit)", i, meta["asset_id"])
         if asset is None:
             asset = work / f"asset_{i}.jpg"
             make_still(asset, spec.style, seed=spec.seed * 10 + i)
+            h = _hash_or_none(asset)
+            if h is not None:
+                used_hashes.append(h)
+            kind = "image"
             meta = {"provider": "procedural", "asset_id": f"{spec.style}-{spec.seed * 10 + i}",
                     "license": "own", "source": ""}
         used.add(meta["asset_id"])
@@ -180,17 +289,33 @@ def _measure_loudness(wav: Path, work: Path) -> Optional[dict]:
     return json.loads(m.group(0)) if m else None
 
 
+def audio_mix_graph(total: float) -> str:
+    """Pure filtergraph for voice over a ducked music bed.
+
+    `[voice]` is split into the mix and the sidechain key. `sidechaincompress`
+    turns the bed down whenever the voice is present (threshold 0.03, ratio 8),
+    so the bed stays audible only in the gaps instead of fighting the narration.
+    Both tracks are padded/trimmed to `total`; the sum is loudnorm-normalised.
+    """
+    fade_start = max(0.0, total - 2)
+    return (
+        f"[0:a]aresample=44100,aformat=channel_layouts=stereo,apad=whole_dur={total:.3f},"
+        f"atrim=0:{total:.3f},asplit=2[voice][key];"
+        f"[1:a]aresample=44100,aformat=channel_layouts=stereo,atrim=0:{total:.3f},volume=0.22,"
+        f"afade=t=in:st=0:d=1,afade=t=out:st={fade_start:.3f}:d=2[bed];"
+        f"[bed][key]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=500[duck];"
+        f"[voice][duck]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout];"
+        f"[aout]loudnorm=I=-14:LRA=11:TP=-1.5[m]"
+    )
+
+
 def build_audio(spec: RenderSpec, work: Path, total: float) -> Path:
-    """voice + procedural bed (ducked ~20 dB by sidechain), padded to `total`, two-pass loudnorm to -14 LUFS."""
+    """Voice + procedural bed, ducked by the voice via sidechaincompress, padded to `total`; two-pass loudnorm to -14 LUFS."""
     from . import audio_bed
     bed = spec.bed_path or audio_bed.generate(duration=total + 2, seed=spec.seed)
     shutil.copy(spec.speech.path, work / "voice_in")
     shutil.copy(bed, work / "bed_in.wav")
-    mix = (f"[0:a]aresample=44100,aformat=channel_layouts=stereo,apad=whole_dur={total:.3f},atrim=0:{total:.3f}[voice];"
-           f"[1:a]aresample=44100,aformat=channel_layouts=stereo,atrim=0:{total:.3f},volume=0.08,"
-           f"afade=t=in:st=0:d=1,afade=t=out:st={total - 2:.3f}:d=2[bed];"
-           f"[voice][bed]amix=inputs=2:duration=first:dropout_transition=2[aout];"
-           f"[aout]loudnorm=I=-14:LRA=11:TP=-1.5[m]")
+    mix = audio_mix_graph(total)
     pre = work / "mix.wav"
     ok, _ = _run([FFMPEG, "-y", "-i", "voice_in", "-i", "bed_in.wav", "-filter_complex", mix, "-map", "[m]", "-c:a", "pcm_s16le", pre.name], work)
     if not ok:
@@ -329,7 +454,17 @@ def render_reel(spec: RenderSpec) -> dict:
         raise ValueError(f"narration too long: {total:.1f}s > {prof['max_s']}s")
     n = max(int(cfg.get("min_shots", load_config().get("visuals", {}).get("min_shots", 4))), math.ceil(total / 7.0))
     n = min(n, 8)
-    L = (total + (n - 1) * XFADE) / n
+    timeline = get_strategy(spec.strategy).plan(spec, n)
+    sentence_starts = [float(b["start"]) for b in spec.speech.boundaries
+                       if b.get("kind") == "SentenceBoundary" and "start" in b]
+    if not sentence_starts:
+        sentence_starts = sentence_starts_from(spec.speech.boundaries, spec.narration)
+    cuts = plan_cut_times(total, n, sentence_starts)
+    lengths = shot_lengths(total, cuts)
+    snapped = sum(1 for c in cuts if any(abs(c - s) <= 0.05 for s in sentence_starts))
+    cut_source = ("sentence" if cuts and snapped == len(cuts)
+                  else "mixed" if snapped else "uniform")
+    transitions = plan_transitions(n, STYLES[spec.style]["pan"])
 
     # fonts into the work dir -> relative fontsdir
     fdir = work / "fonts"
@@ -347,14 +482,15 @@ def render_reel(spec: RenderSpec) -> dict:
         raise ValueError("roman line has glyphs missing from the Latin font")
 
     t = time.time()
-    shots = gather_shots(spec, work, n)
+    shots = gather_shots(spec, work, n, timeline)
     stages["visuals"] = round(time.time() - t, 1)
 
     t = time.time()
     pan0 = STYLES[spec.style]["pan"]
     workers = max(1, load_config().get("laptop", {}).get("max_workers") or (_threads() // 1))
     with ThreadPoolExecutor(max_workers=min(workers, n)) as ex:
-        futs = [ex.submit(_shot_clip, work, s["i"], s["path"], s["kind"], L, spec.style, pan0 + s["i"]) for s in shots]
+        futs = [ex.submit(_shot_clip, work, s["i"], s["path"], s["kind"], lengths[min(s["i"], len(lengths) - 1)],
+                          spec.style, pan0 + s["i"]) for s in shots]
         clips = [f.result() for f in futs]
     if any(c is None for c in clips):
         raise RuntimeError("a shot failed to render; see log")
@@ -379,9 +515,9 @@ def render_reel(spec: RenderSpec) -> dict:
         inputs += ["-i", c.name]
     fg, last = [], "[0:v]"
     for k in range(1, n):
-        off = k * (L - XFADE)
+        off = cuts[k - 1]
         lab = f"[x{k}]"
-        fg.append(f"{last}[{k}:v]xfade=transition=fade:duration={XFADE}:offset={off:.3f}{lab}")
+        fg.append(f"{last}[{k}:v]xfade=transition={transitions[k - 1]}:duration={XFADE}:offset={off:.3f}{lab}")
         last = lab
     fg.append(f"{last}vignette=PI/5,ass=captions.ass:fontsdir=fonts:shaping=complex,format=yuv420p[v]")
     inputs += ["-i", audio.name]
@@ -410,6 +546,7 @@ def render_reel(spec: RenderSpec) -> dict:
         "archetype": getattr(spec, "archetype", "stakes"),
         "model": getattr(spec, "model", "groq"),
         "total_s": total, "audio_s": spec.speech.duration, "tts_engine": spec.speech.engine, "timing_method": method,
+        "cut_times": cuts, "shot_lengths_s": lengths, "cut_source": cut_source, "transitions": transitions,
         "shots": [{k: (str(v) if isinstance(v, Path) else v) for k, v in s.items()} for s in shots],
         "fonts": [fonts.DEVANAGARI[0], fonts.LATIN[0]], "shaping": "complex", "stages_s": stages, "render_s": round(time.time() - t_start, 1),
     }

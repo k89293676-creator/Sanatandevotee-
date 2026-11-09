@@ -126,10 +126,14 @@ def synthesize_chunks(chunks: list[str], voice: str = "hi-IN-MadhurNeural", rate
             continue
         paths.append(sp.path)
         for b in (sp.boundaries or []):
-            boundaries_all.append({"text": b.get("text", chunk), "start": b.get("start", 0) + offset,
-                                   "end": b.get("end", sp.duration) + offset})
+            item = {"text": b.get("text", chunk), "start": b.get("start", 0) + offset,
+                    "end": b.get("end", sp.duration) + offset}
+            if b.get("kind"):
+                item["kind"] = b["kind"]      # keep SentenceBoundary so cut planning can use it
+            boundaries_all.append(item)
         if not sp.boundaries:
-            boundaries_all.append({"text": chunk, "start": offset, "end": offset + sp.duration})
+            boundaries_all.append({"text": chunk, "start": offset, "end": offset + sp.duration,
+                                   "kind": "WordBoundary"})
         offset += sp.duration + gap_ms / 1000.0
     if not paths:
         raise RuntimeError("no chunks synthesized")

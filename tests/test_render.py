@@ -74,6 +74,14 @@ def test_full_render_and_validate(tmp_path):
     assert man["metrics"]["components"]["coverage"] > 0.9
     assert man["metrics"]["checks_total"] == len(v["checks"])
     assert man["metrics"]["sync_source"] in ("measured", "unmeasured")
+    # Phase D: cuts/lengths/transitions are explicit and the xfade chain is exact
+    assert len(man["cut_times"]) == len(man["shots"]) - 1
+    assert len(man["transitions"]) == len(man["shots"]) - 1
+    assert man["cut_source"] in ("sentence", "mixed", "uniform")
+    xf = 0.4
+    chained = sum(man["shot_lengths_s"]) - (len(man["shots"]) - 1) * xf
+    assert abs(chained - man["total_s"]) < 0.05
+    assert len(set(man["transitions"])) >= min(2, len(man["transitions"]))
 
 
 def test_validate_fails_for_the_right_reason(tmp_path):

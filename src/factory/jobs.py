@@ -51,7 +51,7 @@ def build_spec(row: dict, script: dict, verse: dict, total_verses: int, speech) 
         narration=script["narration_hi"],
         cta_lines=cta,
         style=row.get("visual_style") or "golden_diya",
-        strategy=row.get("strategy") or cfg.get("visuals", {}).get("strategy", "diya_loop"),
+        strategy=row.get("strategy") or cfg.get("visuals", {}).get("strategy", "mixed_montage"),
         archetype=row.get("hook_style") or "stakes",
         model="groq",
         profile=row.get("render_profile") or cfg.get("render", {}).get("profile", "standard"),
