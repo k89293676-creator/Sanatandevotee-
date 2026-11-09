@@ -113,16 +113,31 @@ def tick(relay_url: str):
                     log.error("gen err %s", e)
     except Exception as e:
         log.error("content_job err %s", e)
-    # render earliest planned reel
+    # render the earliest due planned reel, then upload it to the relay
     from .db import connect
+    from . import jobs
     conn = connect()
-    rows = conn.execute("SELECT * FROM reels WHERE status='planned' AND video_path IS NULL ORDER BY scheduled_at_utc LIMIT 1").fetchall()
+    rows = conn.execute(
+        "SELECT * FROM reels WHERE status='planned' AND scheduled_at_utc IS NOT NULL "
+        "ORDER BY scheduled_at_utc LIMIT 1").fetchall()
     conn.close()
     for r in rows:
         if not can_render():
             log.info("skip render: power policy")
             break
         log.info("rendering reel %s", r["uuid"])
+        try:
+            man = jobs.render_reel_row(r)
+        except Exception as e:
+            log.error("render failed %s: %s", r["uuid"], e)
+            jobs.mark_failed(r, str(e))
+            break
+        if CFG.get("scheduling", {}).get("mode", "cloud_relay") == "cloud_relay":
+            try:
+                jobs.upload_reel(r, man, relay_url)
+            except Exception as e:
+                log.error("upload failed %s: %s", r["uuid"], e)
+        break
     # refill plan
     try:
         planner.plan("shiv_chalisa", days=CFG["scheduling"]["buffer_target_days"])

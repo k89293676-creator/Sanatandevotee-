@@ -33,7 +33,8 @@ def factory_headers(method: str, path: str, body: bytes) -> dict:
     }
 
 
-def request_upload_url(relay_url: str, reel_uuid: str, filename: str) -> str | None:
+def request_upload_target(relay_url: str, reel_uuid: str, filename: str) -> dict | None:
+    """Ask the relay for a signed upload URL. Returns {"url", "public_url"} or None."""
     path = "/api/factory/upload-url"
     body = json.dumps({"uuid": reel_uuid, "filename": filename}).encode()
     headers = factory_headers("POST", path, body)
@@ -41,18 +42,29 @@ def request_upload_url(relay_url: str, reel_uuid: str, filename: str) -> str | N
     try:
         r = httpx.post(url, content=body, headers=headers, timeout=60)
         if r.status_code == 200:
-            return r.json().get("url")
+            j = r.json()
+            if j.get("url") and j.get("public_url"):
+                return {"url": j["url"], "public_url": j["public_url"]}
+            log.warning("upload-url response missing url/public_url")
     except Exception as e:
-        log.warning("request_upload_url err %s", e)
+        log.warning("request_upload_target err %s", e)
     return None
 
 
-def upload_file(signed_url: str, path: Path) -> bool:
-    # resumable-ish: simple PUT with retry
+def request_upload_url(relay_url: str, reel_uuid: str, filename: str) -> str | None:
+    t = request_upload_target(relay_url, reel_uuid, filename)
+    return t["url"] if t else None
+
+
+def upload_file(signed_url: str, path: Path, content_type: str = "video/mp4") -> bool:
+    """Stream the file (never load the whole mp4 into memory) with bounded retries."""
+    size = path.stat().st_size
     for attempt in range(3):
         try:
-            data = path.read_bytes()
-            r = httpx.put(signed_url, content=data, headers={"Content-Type": "video/mp4", "Content-Length": str(len(data))}, timeout=300)
+            with path.open("rb") as f:
+                r = httpx.put(signed_url, content=f,
+                              headers={"Content-Type": content_type, "Content-Length": str(size)},
+                              timeout=600)
             if r.status_code in (200, 201, 204):
                 return True
             log.warning("upload status %s", r.status_code)
