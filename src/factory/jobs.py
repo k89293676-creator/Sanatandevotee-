@@ -42,6 +42,7 @@ def build_spec(row: dict, script: dict, verse: dict, total_verses: int, speech) 
     if day and day < total_verses:
         cta.append(f"कल: दिन {day + 1}/{total_verses} | फॉलो करें")
     cta.append("फ्री पीडीएफ़ + ऑडियो: लिंक बायो में")
+    cta.append("सेव करो, एक भक्त को शेयर करो")
     fmt = row.get("format") or script.get("format") or "meaning"
     return RenderSpec(
         uuid=row["uuid"],

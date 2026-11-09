@@ -180,14 +180,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     L = [hdr]
     L.append(f"Dialogue: 1,{_ts(0)},{_ts(total)},Badge,,0,0,0,,{_esc(badge)}")
-    L.append(f"Dialogue: 2,{_ts(0.15)},{_ts(3.0)},Hook,,0,0,0,,{{\\fad(250,350)}}{_esc(wrap_two_lines(hook, 16))}")
+    L.append(f"Dialogue: 2,{_ts(0.15)},{_ts(3.0)},Hook,,0,0,0,,{{\\fad(250,350)\\t(0,400,\\fscx115\\fscy115)\\t(400,800,\\fscx100\\fscy100)}}{_esc(wrap_two_lines(hook, 16))}")
     cta_start = max(total - 3.2, 0)
     for t in timings:
         if t["start"] >= cta_start - 0.05:
             continue
         end = min(t["end"], cta_start)
-        L.append(f"Dialogue: 0,{_ts(t['start'])},{_ts(end)},Cap,,0,0,0,,{_esc(wrap_two_lines(t['text']))}")
+        L.append(f"Dialogue: 0,{_ts(t['start'])},{_ts(end)},Cap,,0,0,0,,{{\\fad(120,80)}}{_esc(wrap_two_lines(t['text']))}")
     if roman:
         L.append(f"Dialogue: 0,{_ts(3.2)},{_ts(cta_start)},Roman,,0,0,0,,{_esc(roman)}")
-    L.append(f"Dialogue: 3,{_ts(cta_start)},{_ts(total)},Cta,,0,0,0,,{{\\fad(300,0)}}{_esc(chr(10).join(cta_lines))}")
+    L.append(f"Dialogue: 3,{_ts(cta_start)},{_ts(total)},Cta,,0,0,0,,{{\\fad(300,0)\\t(0,500,\\fscx108\\fscy108)\\t(500,1000,\\fscx100\\fscy100)}}{_esc(chr(10).join(cta_lines))}")
     return "\n".join(L) + "\n"
