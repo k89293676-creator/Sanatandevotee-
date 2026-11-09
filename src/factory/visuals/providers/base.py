@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Protocol
 
-NEGATIVE_TAGS = ["japan", "pagoda", "tokyo", "modern city", "anime", "gothic", "castle",
-                 "skyscraper", "neon", "cyberpunk", "western", "european"]
+NEGATIVE_TAGS = ["japan", "pagoda", "tokyo", "china", "korea", "zen", "shinto",
+                 "buddhist temple", "gothic", "castle", "church", "cathedral",
+                 "snow castle", "bridge", "torii", "modern city", "anime"]
 
 
 @dataclass

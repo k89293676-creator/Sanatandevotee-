@@ -13,12 +13,15 @@ from ..logging_setup import setup_logging
 log = setup_logging("visuals")
 PROVIDERS = {"pixabay": PixabayProvider, "wikimedia_commons": WikimediaProvider, "pollinations": PollinationsProvider}
 
-MANDATORY_TAGS = ["himalayas", "shiva", "meditation", "ancient temple", "devotional"]
+MANDATORY_TAGS = ["himalayan peak", "lord shiva trident", "kailash mountain",
+                  "holy river ganges", "ancient indian temple stone",
+                  "spiritual meditation glow"]
 CONTEXT_CLUSTERS = {
-    "shiva": ["shiva statue", "mahadev", "trident", "rudraksha", "nandi"],
-    "temple": ["ancient temple", "hindu temple", "diya light", "sacred flame"],
-    "himalaya": ["himalayas", "kailash", "mountain mist", "snow peak"],
-    "meditation": ["meditation", "yoga", "spiritual light", "incense smoke"],
+    "shiva": ["lord shiva trident", "mahadev", "rudraksha", "nandi"],
+    "temple": ["ancient indian temple stone", "hindu temple", "diya light", "sacred flame"],
+    "himalaya": ["himalayan peak", "kailash mountain", "mountain mist"],
+    "meditation": ["spiritual meditation glow", "yoga", "incense smoke"],
+    "ganges": ["holy river ganges", "sacred river"],
 }
 
 

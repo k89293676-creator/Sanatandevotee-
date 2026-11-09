@@ -551,6 +551,20 @@ def render_reel(spec: RenderSpec) -> dict:
 
     t = time.time()
     shots = gather_shots(spec, work, n, timeline)
+    # Sanity check: drop any asset that slipped through with blacklisted cultural tags.
+    for s in shots:
+        text = f"{s.get('asset_id','')} {s.get('tags','')} {s.get('source','')}".lower()
+        if any(neg in text for neg in NEGATIVE_TAGS):
+            log.warning("blacklisted asset %s in shot %s; replacing with procedural", s.get("asset_id"), s["i"])
+            asset = work / f"asset_{s['i']}.jpg"
+            make_still(asset, spec.style, seed=spec.seed * 10 + s["i"])
+            s["path"] = asset
+            s["kind"] = "image"
+            s["provider"] = "procedural"
+            s["asset_id"] = f"{spec.style}-{spec.seed * 10 + s['i']}"
+            s["tags"] = "devotional"
+            s["license"] = "own"
+            s["source"] = ""
     stages["visuals"] = round(time.time() - t, 1)
 
     motions = plan_motions(n, spec.style, spec.seed)
