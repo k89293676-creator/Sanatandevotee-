@@ -33,8 +33,12 @@ TAIL = 1.0
 XFADE = 0.4
 BG_CHANGE = 9.0    # mean abs diff (0-255) on a 12x21 view between consecutive 1 s samples
 W, H = 1080, 1920
-MIN_SHOT_S = 2.5   # keeps a shot readable even when cuts snap to a sentence boundary
-TRANSITIONS = ["fade", "wipeleft", "slideup", "circleopen"]
+TRANSITIONS = ["fade", "wipeleft", "slideup", "circleopen", "circleclose", "dissolve"]
+MIN_SHOT_S = 2.5
+SHIV_KEYWORDS = ["shiva", "trident", "temple", "diya", "himalaya", "rudraksha", "nandi", "kailash"]
+SHIV_IMAGE_PROMPTS = ["shiva trident crescent moon himalaya", "nandi temple diya flame",
+                      "rudraksha beads meditation ash", "kailash snow peak dawn"]
+IMAGE_MOTIONS = ["pan_lr", "zoom_in", "pan_rl", "zoom_out", "drift_down", "diagonal"]
 
 # colour grade + caption look per visual style. BGR hex for ASS.
 STYLES: Dict[str, dict] = {
@@ -43,6 +47,7 @@ STYLES: Dict[str, dict] = {
     "golden_diya":    {"grade": "eq=contrast=1.06:saturation=1.15,colorbalance=rs=0.08:bs=-0.08", "accent": "&H0040B8FF", "pan": 2},
     "himalaya_dawn":  {"grade": "eq=contrast=1.04:saturation=1.05,colorbalance=rm=0.05:bh=0.05",  "accent": "&H00A0D8FF", "pan": 3},
     "forest_night":   {"grade": "eq=contrast=1.08:saturation=0.9,colorbalance=gs=0.06:bs=0.03",   "accent": "&H0090FFB0", "pan": 4},
+    "shiva_blue":     {"grade": "eq=contrast=1.1:saturation=0.9,colorbalance=bs=0.12:bm=0.08",   "accent": "&H00FFD080", "pan": 0},
 }
 PROFILES = {
     "standard": dict(w=1080, h=1920, crf=23, maxrate="3500k", bufsize="7000k", abr="128k", max_mb=None, max_s=58),
@@ -63,8 +68,8 @@ class RenderSpec:
     archetype: str = "stakes"
     model: str = "groq"
     profile: str = "standard"
-    keywords: List[str] = field(default_factory=lambda: ["diya", "temple", "mist"])
-    image_prompts: List[str] = field(default_factory=list)
+    keywords: List[str] = field(default_factory=lambda: list(SHIV_KEYWORDS))
+    image_prompts: List[str] = field(default_factory=lambda: list(SHIV_IMAGE_PROMPTS))
     roman: Optional[str] = None      # recital: Roman line shown under the verse (Latin font)
     seed: int = 0
     bed_path: Optional[Path] = None
@@ -169,14 +174,50 @@ def plan_transitions(n: int, pan0: int = 0) -> list[str]:
     return [TRANSITIONS[(pan0 + k) % len(TRANSITIONS)] for k in range(1, n)]
 
 
-def _shot_clip(work: Path, i: int, asset: Path, kind: str, L: float, style: str, direction: int) -> Optional[Path]:
+def plan_motions(n: int, style: str = "golden_diya", seed: int = 0) -> list[str]:
+    """One motion template per shot, varied by style so a reel is not one long pan."""
+    pan0 = STYLES.get(style, STYLES["golden_diya"])["pan"]
+    out = []
+    for i in range(n):
+        out.append(IMAGE_MOTIONS[(pan0 + i * 2 + seed) % len(IMAGE_MOTIONS)])
+    return out
+
+
+def _shot_clip(work: Path, i: int, asset: Path, kind: str, L: float, style: str,
+               motion: str = "pan_lr") -> Optional[Path]:
     out = work / f"shot_{i}.mp4"
     grade = STYLES[style]["grade"]
     if kind == "image":
         pre = work / f"pre_{i}.jpg"
         _prep_still(asset, pre)
-        x, y = _pan_expr(direction, L)
-        vf = f"crop={W}:{H}:x='{x}':y='{y}',fps=30,{grade},format=yuv420p"
+        if motion == "pan_lr":
+            x, y = f"(iw-ow)*t/{L:.3f}", f"(ih-oh)*0.5"
+            vf = f"crop={W}:{H}:x='{x}':y='{y}'"
+        elif motion == "pan_rl":
+            x, y = f"(iw-ow)*(1-t/{L:.3f})", f"(ih-oh)*0.5"
+            vf = f"crop={W}:{H}:x='{x}':y='{y}'"
+        elif motion == "pan_tb":
+            x, y = f"(iw-ow)*0.5", f"(ih-oh)*t/{L:.3f}"
+            vf = f"crop={W}:{H}:x='{x}':y='{y}'"
+        elif motion == "pan_bt":
+            x, y = f"(iw-ow)*0.5", f"(ih-oh)*(1-t/{L:.3f})"
+            vf = f"crop={W}:{H}:x='{x}':y='{y}'"
+        elif motion == "zoom_in":
+            vf = (f"crop=w=1350-270*t/{L:.3f}:h=2400-480*t/{L:.3f}"
+                  f":x=(iw-ow)/2:y=(ih-oh)/2")
+        elif motion == "zoom_out":
+            vf = (f"crop=w=1080+270*t/{L:.3f}:h=1920+480*t/{L:.3f}"
+                  f":x=(iw-ow)/2:y=(ih-oh)/2")
+        elif motion == "drift_down":
+            x, y = f"(iw-ow)*t/{L:.3f}", f"(ih-oh)*t/{L:.3f}"
+            vf = f"crop={W}:{H}:x='{x}':y='{y}'"
+        elif motion == "diagonal":
+            x, y = f"(iw-ow)*t/{L:.3f}", f"(ih-oh)*(1-t/{L:.3f})"
+            vf = f"crop={W}:{H}:x='{x}':y='{y}'"
+        else:
+            x, y = f"(iw-ow)*0.5", f"(ih-oh)*0.5"
+            vf = f"crop={W}:{H}:x='{x}':y='{y}'"
+        vf = f"{vf},fps=30,{grade},format=yuv420p"
         cmd = [FFMPEG, "-y", "-threads", "1", "-loop", "1", "-framerate", "30", "-i", pre.name, "-t", f"{L:.3f}", "-vf", vf]
     else:                                       # stock video: fill_blur layout handles landscape clips
         fc = (f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},boxblur=30:5[bg];"
@@ -485,12 +526,13 @@ def render_reel(spec: RenderSpec) -> dict:
     shots = gather_shots(spec, work, n, timeline)
     stages["visuals"] = round(time.time() - t, 1)
 
+    motions = plan_motions(n, spec.style, spec.seed)
     t = time.time()
-    pan0 = STYLES[spec.style]["pan"]
     workers = max(1, load_config().get("laptop", {}).get("max_workers") or (_threads() // 1))
     with ThreadPoolExecutor(max_workers=min(workers, n)) as ex:
-        futs = [ex.submit(_shot_clip, work, s["i"], s["path"], s["kind"], lengths[min(s["i"], len(lengths) - 1)],
-                          spec.style, pan0 + s["i"]) for s in shots]
+        futs = [ex.submit(_shot_clip, work, s["i"], s["path"], s["kind"],
+                          lengths[min(s["i"], len(lengths) - 1)], spec.style, motions[s["i"]])
+                for s in shots]
         clips = [f.result() for f in futs]
     if any(c is None for c in clips):
         raise RuntimeError("a shot failed to render; see log")
@@ -547,6 +589,7 @@ def render_reel(spec: RenderSpec) -> dict:
         "model": getattr(spec, "model", "groq"),
         "total_s": total, "audio_s": spec.speech.duration, "tts_engine": spec.speech.engine, "timing_method": method,
         "cut_times": cuts, "shot_lengths_s": lengths, "cut_source": cut_source, "transitions": transitions,
+        "motions": motions,
         "shots": [{k: (str(v) if isinstance(v, Path) else v) for k, v in s.items()} for s in shots],
         "fonts": [fonts.DEVANAGARI[0], fonts.LATIN[0]], "shaping": "complex", "stages_s": stages, "render_s": round(time.time() - t_start, 1),
     }

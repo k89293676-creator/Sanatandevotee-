@@ -112,14 +112,23 @@ def build_timings(text: str, audio_seconds: float, audio_path: Optional[str] = N
     """Return (timings, method). Order: edge boundaries -> faster-whisper -> proportional (real length)."""
     chunks = split_chunks(text, max_words)
     if boundaries:
+        boundaries = [b for b in boundaries if b.get("kind", "WordBoundary") != "SentenceBoundary"]
+    if boundaries:
         r = timings_from_words(chunks, boundaries)
         if r:
+            for t in r:
+                t["end"] = min(t["end"], audio_seconds)
+                if t["end"] <= t["start"]:
+                    t["end"] = min(audio_seconds, t["start"] + 0.05)
             return r, "edge_boundary"
     if audio_path:
         r = timings_from_words(chunks, whisper_words(audio_path))
         if r:
+            for t in r:
+                t["end"] = min(t["end"], audio_seconds)
             return r, "whisper"
-    return proportional_timings(chunks, audio_seconds), "proportional"
+    out = proportional_timings(chunks, audio_seconds)
+    return out, "proportional"
 
 
 # ---------------- ASS ----------------

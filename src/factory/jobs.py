@@ -15,7 +15,7 @@ from . import sync, tts
 from .config import load_config
 from .db import connect
 from .logging_setup import setup_logging
-from .render import RenderSpec, render_reel
+from .render import RenderSpec, render_reel, SHIV_KEYWORDS
 
 log = setup_logging("jobs")
 
@@ -55,7 +55,7 @@ def build_spec(row: dict, script: dict, verse: dict, total_verses: int, speech) 
         archetype=row.get("hook_style") or "stakes",
         model="groq",
         profile=row.get("render_profile") or cfg.get("render", {}).get("profile", "standard"),
-        keywords=_json_list(script.get("visual_keywords_json"), ["diya", "temple", "mist"]),
+        keywords=_json_list(script.get("visual_keywords_json"), SHIV_KEYWORDS),
         image_prompts=_json_list(script.get("image_prompts_json")),
         roman=verse.get("roman") if fmt == "recital" else None,
         seed=int(hashlib.sha256(str(row["uuid"]).encode()).hexdigest()[:8], 16),

@@ -78,6 +78,7 @@ def test_full_render_and_validate(tmp_path):
     assert len(man["cut_times"]) == len(man["shots"]) - 1
     assert len(man["transitions"]) == len(man["shots"]) - 1
     assert man["cut_source"] in ("sentence", "mixed", "uniform")
+    assert len(man["motions"]) == len(man["shots"])
     xf = 0.4
     chained = sum(man["shot_lengths_s"]) - (len(man["shots"]) - 1) * xf
     assert abs(chained - man["total_s"]) < 0.05

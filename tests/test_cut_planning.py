@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.factory.render import (TRANSITIONS, XFADE, plan_cut_times,       # noqa: E402
-                                plan_transitions, sentence_starts_from, shot_lengths)
+                                plan_motions, plan_transitions, sentence_starts_from, shot_lengths)
 
 
 def test_sentence_starts_come_from_danda_and_word_boundaries():
@@ -71,8 +71,8 @@ def test_shot_lengths_sum_to_xfade_chain_total():
     assert abs(chained - total) < 0.01
 
 
-def test_transition_rotation_never_repeats_consecutively():
-    trans = plan_transitions(6, pan0=1)
-    assert len(trans) == 5
-    assert all(t in TRANSITIONS for t in trans)
-    assert all(a != b for a, b in zip(trans, trans[1:]))
+def test_motion_templates_vary_across_shots():
+    motions = plan_motions(6, "golden_diya", seed=1)
+    assert len(motions) == 6
+    assert all(m in ["pan_lr", "zoom_in", "pan_rl", "zoom_out", "drift_down", "diagonal"] for m in motions)
+    assert len(set(motions)) >= 3
