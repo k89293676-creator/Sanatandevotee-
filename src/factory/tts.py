@@ -11,6 +11,7 @@ log = setup_logging("tts")
 CACHE = media_dir() / "audio"
 CACHE.mkdir(parents=True, exist_ok=True)
 FFPROBE = shutil.which("ffprobe") or "ffprobe"
+FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
 
 VOICES = {"madhur": "hi-IN-MadhurNeural", "swara": "hi-IN-SwaraNeural"}
 
@@ -83,48 +84,60 @@ def _piper(text: str, out: Path) -> bool:
         return False
 
 
+def _join_with_gaps(paths: List[Path], gap_ms: int, work: Path) -> Path:
+    """Decode every chunk, append `gap_ms` of silence after each (except the last), concat, write WAV.
+
+    The gap is real audio, so the returned file's duration equals sum(chunk durations) + gaps.
+    """
+    import subprocess
+    n = len(paths)
+    work.mkdir(parents=True, exist_ok=True)
+    out = work / "joined.wav"
+    if n == 1:
+        subprocess.run([FFMPEG, "-y", "-i", str(paths[0]), "-c:a", "pcm_s16le", str(out)],
+                       check=True, capture_output=True)
+        return out
+    gap = max(0.0, gap_ms / 1000.0)
+    fc = []
+    for i in range(n):
+        pad = f",apad=pad_dur={gap:.3f}" if (gap > 0 and i < n - 1) else ""
+        fc.append(f"[{i}:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono{pad}[a{i}]")
+    fc.append("".join(f"[a{i}]" for i in range(n)) + f"concat=n={n}:v=0:a=1[out]")
+    inputs: List[str] = []
+    for p in paths:
+        inputs += ["-i", str(p)]
+    r = subprocess.run([FFMPEG, "-y", *inputs, "-filter_complex", ";".join(fc), "-map", "[out]",
+                        "-c:a", "pcm_s16le", str(out)], capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    if r.returncode != 0 or not out.exists():
+        raise RuntimeError(f"chunk join failed: {r.stderr[-400:]}")
+    return out
+
+
 def synthesize_chunks(chunks: list[str], voice: str = "hi-IN-MadhurNeural", rate: str = "+0%",
                       gap_ms: int = 200) -> Speech:
-    """Synthesize each chunk separately and join with gaps. Returns Speech with per-chunk timings."""
-    import asyncio
-    paths = []
-    boundaries_all = []
+    """Synthesize each chunk, join with real silence gaps, and report the MEASURED total duration."""
+    paths: List[Path] = []
+    boundaries_all: List[Dict] = []
     offset = 0.0
-    chunk_timings = []
-    for i, chunk in enumerate(chunks):
+    for chunk in chunks:
         sp = synthesize(chunk, voice, rate)
         if sp is None:
-            # fallback: skip
             continue
         paths.append(sp.path)
-        dur = sp.duration
-        # build boundary for this chunk
         for b in (sp.boundaries or []):
             boundaries_all.append({"text": b.get("text", chunk), "start": b.get("start", 0) + offset,
-                                   "end": b.get("end", dur) + offset})
+                                   "end": b.get("end", sp.duration) + offset})
         if not sp.boundaries:
-            boundaries_all.append({"text": chunk, "start": offset, "end": offset + dur})
-        chunk_timings.append({"text": chunk, "start": offset, "end": offset + dur})
-        offset += dur + gap_ms / 1000.0
-    # join audio files with gaps using ffmpeg
+            boundaries_all.append({"text": chunk, "start": offset, "end": offset + sp.duration})
+        offset += sp.duration + gap_ms / 1000.0
     if not paths:
         raise RuntimeError("no chunks synthesized")
-    # simple: concatenate with silence gaps
-    import subprocess, shutil
-    FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
-    work = Path(paths[0]).parent / "chunks_join"
-    work.mkdir(parents=True, exist_ok=True)
-    # build concat list
-    concat = work / "concat.txt"
-    lines = []
-    for p in paths:
-        lines.append(f"file '{p.as_posix()}'")
-    concat.write_text("\n".join(lines), encoding="utf-8")
-    out = work / "joined.wav"
-    # use ffmpeg concat with adelay for gaps - simpler: just concat without gaps for now
-    subprocess.run([FFMPEG, "-y", "-f", "concat", "-safe", "0", "-i", str(concat),
-                    "-c:a", "pcm_s16le", str(out)], capture_output=True)
-    dur_total = offset
+    out = _join_with_gaps(paths, gap_ms, Path(paths[0]).parent / "chunks_join")
+    # trust the file, not the arithmetic: probe what was actually joined
+    dur_total = probe_duration(out)
+    if dur_total <= 0:
+        raise RuntimeError("joined audio has zero duration")
     return Speech(path=out, duration=dur_total, engine="edge-tts-chunks", boundaries=boundaries_all)
 
 
