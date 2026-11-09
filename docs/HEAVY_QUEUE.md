@@ -17,3 +17,10 @@ These items require `ALLOW_HEAVY=1` and real compute. Do **not** run during the 
 | 11 | Real Whisper/ASR caption check (if ever enabled) | heavy | GPU/CPU |
 
 Mark any new slow test with `@pytest.mark.heavy` in `pytest.ini`-registered marker.
+
+## Verified in Heavy Pass (2026-11-09)
+
+- `tests/test_render.py::test_full_render_and_validate` — PASSED (318.59s). Full render + validate, `v["ok"]` True; manifest cut/length/transition assertions passed.
+- `tests/test_render.py::test_manifest_uses_complex_shaping_and_distinct_shots` — PASSED (part of 375.00s batch).
+- `tests/test_render.py::test_validate_fails_for_the_right_reason` — PASSED.
+- Total heavy suite for `test_render.py`: 3 passed.
