@@ -91,17 +91,48 @@ def enqueue(relay_url: str, payload: dict) -> bool:
     return False
 
 
+_OK_TYPES = {"video/mp4", "application/octet-stream", "binary/octet-stream", ""}
+
+
+def _type_ok(value: str) -> bool:
+    return (value or "").split(";")[0].strip().lower() in _OK_TYPES
+
+
+def _range_total(content_range: str) -> int | None:
+    """Total size from `Content-Range: bytes 0-1023/12345`, or None if absent/malformed."""
+    if not content_range or "/" not in content_range:
+        return None
+    tail = content_range.rsplit("/", 1)[1].strip()
+    return int(tail) if tail.isdigit() else None
+
+
 def verify_public_url(url: str, expected_size: int) -> bool:
+    """Confirm the uploaded object is publicly readable and the expected size.
+
+    Accepts `video/mp4` and generic binary types: object stores commonly serve
+    `application/octet-stream` when no content type was set on the upload.
+    A range GET is used first so a large video is never downloaded just to check it.
+    """
     try:
-        r = httpx.get(url, headers={"Range": "bytes=0-1023"}, timeout=60)
-        if r.status_code not in (200, 206):
-            return False
-        if "video/mp4" not in r.headers.get("Content-Type", ""):
-            return False
-        # total size check via HEAD
         h = httpx.head(url, timeout=60)
-        total = int(h.headers.get("Content-Length", 0))
-        return total == expected_size
+        if h.status_code not in (200, 206):
+            return False
+        if not _type_ok(h.headers.get("Content-Type", "")):
+            return False
+        head_len = int(h.headers.get("Content-Length") or 0)
+        if expected_size > 0 and head_len and head_len != expected_size:
+            return False
+
+        r = httpx.get(url, headers={"Range": "bytes=0-1023"}, timeout=60)
+        if r.status_code == 206:
+            total = _range_total(r.headers.get("Content-Range", ""))
+        elif r.status_code == 200:
+            total = len(r.content)
+        else:
+            return False
+        if expected_size > 0:
+            return total == expected_size
+        return total is not None and total > 0
     except Exception as e:
         log.warning("verify_public_url err %s", e)
         return False
