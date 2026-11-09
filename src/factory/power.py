@@ -63,12 +63,4 @@ def can_render() -> bool:
 
 
 def max_threads() -> int:
-    import os
-    n = os.cpu_count() or 4
-    mode = cfg["laptop"].get("max_ffmpeg_threads", "auto_half")
-    if mode == "auto_half":
-        return max(1, n // 2)
-    try:
-        return int(mode)
-    except Exception:
-        return max(1, n // 2)
+    return 2

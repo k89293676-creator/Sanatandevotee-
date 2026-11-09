@@ -38,7 +38,8 @@ MIN_SHOT_S = 2.5
 SHIV_KEYWORDS = ["shiva", "trident", "temple", "diya", "himalaya", "rudraksha", "nandi", "kailash"]
 SHIV_IMAGE_PROMPTS = ["shiva trident crescent moon himalaya", "nandi temple diya flame",
                       "rudraksha beads meditation ash", "kailash snow peak dawn"]
-IMAGE_MOTIONS = ["pan_lr", "zoom_in", "pan_rl", "zoom_out", "drift_down", "diagonal"]
+IMAGE_MOTIONS = ["pan_lr", "zoom_in", "pan_rl", "zoom_out", "drift_down", "diagonal",
+                 "shake", "pulse", "slide_left"]
 
 # colour grade + caption look per visual style. BGR hex for ASS.
 STYLES: Dict[str, dict] = {
@@ -214,6 +215,16 @@ def _shot_clip(work: Path, i: int, asset: Path, kind: str, L: float, style: str,
         elif motion == "diagonal":
             x, y = f"(iw-ow)*t/{L:.3f}", f"(ih-oh)*(1-t/{L:.3f})"
             vf = f"crop={W}:{H}:x='{x}':y='{y}'"
+        elif motion == "shake":
+            x, y = f"(iw-ow)/2+8*sin(6*PI*t/{L:.3f})", f"(ih-oh)/2+6*cos(6*PI*t/{L:.3f})"
+            vf = f"crop={W}:{H}:x='{x}':y='{y}'"
+        elif motion == "pulse":
+            vf = (f"scale=w=max(1080\\,floor(1080+60*sin(2*PI*t/{L:.3f}))):h=max(1920\\,floor(1920+105*sin(2*PI*t/{L:.3f}))):eval=frame,"
+                  f"crop=1080:1920:(iw-ow)/2:(ih-oh)/2")
+        elif motion == "slide_left":
+            x = f"(iw-ow)*pow(t/{L:.3f}\\,0.7)"
+            y = f"(ih-oh)*0.5"
+            vf = f"crop={W}:{H}:x='{x}':y='{y}'"
         else:
             x, y = f"(iw-ow)*0.5", f"(ih-oh)*0.5"
             vf = f"crop={W}:{H}:x='{x}':y='{y}'"
@@ -335,18 +346,19 @@ def _measure_loudness(wav: Path, work: Path) -> Optional[dict]:
     return json.loads(m.group(0)) if m else None
 
 
-def audio_mix_graph(total: float) -> str:
-    """Pure filtergraph for voice over a ducked music bed.
-
-    `[voice]` is split into the mix and the sidechain key. `sidechaincompress`
-    turns the bed down whenever the voice is present (threshold 0.03, ratio 8),
-    so the bed stays audible only in the gaps instead of fighting the narration.
-    Both tracks are padded/trimmed to `total`; the sum is loudnorm-normalised.
-    """
+def audio_mix_graph(total: float, voice_speed: float = 1.0) -> str:
+    """Pure filtergraph for voice over a ducked music bed."""
     fade_start = max(0.0, total - 2)
+    voice_chain = f"[0:a]aresample=44100,aformat=channel_layouts=stereo,apad=whole_dur={total * voice_speed:.3f},atrim=0:{total * voice_speed:.3f},asplit=2[voice][key]"
+    if voice_speed != 1.0:
+        voice_chain = voice_chain.replace("[0:a]", f"[0:a]atempo={voice_speed:.4f},")
+    # simpler: prepend atempo to voice
+    voice_chain = (f"[0:a]atempo={voice_speed:.4f},aresample=44100,aformat=channel_layouts=stereo,"
+                   f"apad=whole_dur={total:.3f},atrim=0:{total:.3f},asplit=2[voice][key]") if voice_speed != 1.0 else \
+                  (f"[0:a]aresample=44100,aformat=channel_layouts=stereo,apad=whole_dur={total:.3f},"
+                   f"atrim=0:{total:.3f},asplit=2[voice][key]")
     return (
-        f"[0:a]aresample=44100,aformat=channel_layouts=stereo,apad=whole_dur={total:.3f},"
-        f"atrim=0:{total:.3f},asplit=2[voice][key];"
+        voice_chain + ";" +
         f"[1:a]aresample=44100,aformat=channel_layouts=stereo,atrim=0:{total:.3f},volume=0.22,"
         f"afade=t=in:st=0:d=1,afade=t=out:st={fade_start:.3f}:d=2[bed];"
         f"[bed][key]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=500[duck];"
@@ -355,13 +367,13 @@ def audio_mix_graph(total: float) -> str:
     )
 
 
-def build_audio(spec: RenderSpec, work: Path, total: float) -> Path:
+def build_audio(spec: RenderSpec, work: Path, total: float, voice_speed: float = 1.0) -> Path:
     """Voice + procedural bed, ducked by the voice via sidechaincompress, padded to `total`; two-pass loudnorm to -14 LUFS."""
     from . import audio_bed
     bed = spec.bed_path or audio_bed.generate(duration=total + 2, seed=spec.seed)
     shutil.copy(spec.speech.path, work / "voice_in")
     shutil.copy(bed, work / "bed_in.wav")
-    mix = audio_mix_graph(total)
+    mix = audio_mix_graph(total, voice_speed)
     pre = work / "mix.wav"
     ok, _ = _run([FFMPEG, "-y", "-i", "voice_in", "-i", "bed_in.wav", "-filter_complex", mix, "-map", "[m]", "-c:a", "pcm_s16le", pre.name], work)
     if not ok:
@@ -496,6 +508,16 @@ def render_reel(spec: RenderSpec) -> dict:
     stages: Dict[str, float] = {}
 
     total = round(spec.speech.duration + TAIL, 3)
+    # Duration guard: keep reels under the 58s cap by gently speeding up long narration.
+    voice_speed = 1.0
+    if spec.speech.duration > 52:
+        voice_speed = min(1.08, spec.speech.duration / 52.0)
+        spec.speech.duration = spec.speech.duration / voice_speed
+        for b in spec.speech.boundaries:
+            if isinstance(b, dict) and "start" in b and "end" in b:
+                b["start"] = float(b["start"]) / voice_speed
+                b["end"] = float(b["end"]) / voice_speed
+        total = round(spec.speech.duration + TAIL, 3)
     if total > prof["max_s"]:
         raise ValueError(f"narration too long: {total:.1f}s > {prof['max_s']}s")
     n = max(int(cfg.get("min_shots", load_config().get("visuals", {}).get("min_shots", 4))), math.ceil(total / 7.0))
@@ -544,7 +566,7 @@ def render_reel(spec: RenderSpec) -> dict:
     stages["shots"] = round(time.time() - t, 1)
 
     t = time.time()
-    audio = build_audio(spec, work, total)
+    audio = build_audio(spec, work, total, voice_speed)
     stages["audio"] = round(time.time() - t, 1)
 
     timings, method = captions.build_timings(spec.narration, spec.speech.duration, audio_path=str(spec.speech.path),
@@ -670,7 +692,7 @@ def validate(mp4: Path, manifest: Optional[dict] = None, profile: str = "standar
     tmp = mp4.parent / f"_val_{mp4.stem}"
     tmp.mkdir(exist_ok=True)
     subprocess.run([FFMPEG, "-y", "-i", str(mp4), "-vf", "fps=1,scale=96:170,format=rgb24", str(tmp / "f%03d.png")], capture_output=True)
-    frames = sorted(tmp.glob("f*.png"))
+    frames = sorted(tmp.glob("f*.png"))[:30]
     arrs = [np.asarray(Image.open(f), dtype=np.float32) for f in frames]
     shutil.rmtree(tmp, ignore_errors=True)
     stds = [float(x.std()) for x in arrs]

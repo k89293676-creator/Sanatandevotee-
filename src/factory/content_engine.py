@@ -23,7 +23,7 @@ def rule_checks(script: dict, verse: dict) -> list[str]:
     issues = []
     narration = script.get("narration_hi", "")
     words = narration.split()
-    if not (70 <= len(words) <= 110):
+    if not (70 <= len(words) <= 85):
         issues.append(f"word_count {len(words)} not in 70-110")
     dev = sum(1 for c in narration if "\u0900" <= c <= "\u097F")
     letters = sum(1 for c in narration if c.isalpha())
@@ -59,7 +59,7 @@ def draft(verse: dict, fmt: str, cards: list = None) -> dict | None:
     prompt = f"""Write a JSON script for format '{fmt}' for this Shiv Chalisa verse.
 Verse: {verse['devanagari']}
 Meaning: {verse['meaning_hi']}
-Return JSON with keys: hooks (list of 3), hook_styles (list of 3), narration_hi (70-110 Hindi words), caption_hi, caption_roman, hashtags (3-5), seo_keywords (3-5), visual_keywords (6), image_prompts (3), est_seconds (28-45)."""
+Return JSON with keys: hook_text (high-retention 3-second opening line), script_text (70-85 Hindi words, culturally rich authentic Hindi), caption (engaging post copy with clear CTA: comment "SHIVA" to get free PDF guide), hashtags (5-8 high-intent tags), first_comment (automated follow-up comment), visual_keywords (6), image_prompts (3), est_seconds (30-50)."""
     return _groq_chat(prompt, 0.8)
 
 

@@ -148,6 +148,8 @@ def upload_reel(row, manifest: dict, relay_url: str, conn=None) -> bool:
             raise RuntimeError("enqueue rejected")
         _mark(conn, row["uuid"], status="uploaded", remote_video_url=vid["public_url"],
               remote_cover_url=cover_public, last_error=None)
+        from . import cleanup
+        cleanup.cleanup_work_dir(row["uuid"])
         return True
     finally:
         if own:

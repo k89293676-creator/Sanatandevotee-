@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Protocol
 
+NEGATIVE_TAGS = ["japan", "pagoda", "tokyo", "modern city", "anime", "gothic", "castle",
+                 "skyscraper", "neon", "cyberpunk", "western", "european"]
+
 
 @dataclass
 class Asset:
@@ -14,6 +17,7 @@ class Asset:
     uploader: str
     license: str
     kind: str  # image|video
+    tags: str = ""
 
 
 class Provider(Protocol):

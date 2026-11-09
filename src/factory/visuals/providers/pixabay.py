@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx, json, time, hashlib
 from pathlib import Path
 from typing import List
-from .base import Asset
+from .base import Asset, NEGATIVE_TAGS
 from ...secrets_store import get_secret
 from ...config import media_dir
 from ...logging_setup import setup_logging
@@ -77,6 +77,10 @@ class PixabayProvider:
                         if hits:
                             break
             for h in hits:
+                tags = h.get("tags", "")
+                text = (tags + " " + h.get("pageURL", "")).lower()
+                if any(neg in text for neg in NEGATIVE_TAGS):
+                    continue
                 if kind == "video":
                     vids = h.get("videos", {})
                     # choose smallest >=720 width
@@ -93,13 +97,14 @@ class PixabayProvider:
                     assets.append(Asset(
                         provider="pixabay", asset_id=str(h.get("id")),
                         url=chosen.get("url"), source_page=h.get("pageURL", ""),
-                        uploader=h.get("user", ""), license="Pixabay Content License", kind="video"))
+                        uploader=h.get("user", ""), license="Pixabay Content License", kind="video",
+                        tags=tags))
                 else:
                     assets.append(Asset(
                         provider="pixabay", asset_id=str(h.get("id")),
                         url=h.get("largeImageURL") or h.get("webformatURL"),
                         source_page=h.get("pageURL", ""), uploader=h.get("user", ""),
-                        license="Pixabay Content License", kind="image"))
+                        license="Pixabay Content License", kind="image", tags=tags))
         except Exception as e:
             log.warning("pixabay err %s", _redact(str(e)))
             return []

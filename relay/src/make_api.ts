@@ -133,6 +133,21 @@ async function creditGate(env: Env): Promise<boolean> {
   return true;
 }
 
+export async function recoverStuck(env: Env): Promise<void> {
+  const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const r = await sb(env, `/relay_queue?status=in.(handed_off,unknown)&retry_count=lt.3&handed_off_at=lt.${encodeURIComponent(cutoff)}&select=id,retry_count`);
+  const rows = r.ok ? ((await r.json()) as any[]) : [];
+  for (const row of rows) {
+    await sb(env, `/relay_queue?id=eq.${encodeURIComponent(row.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: "planned", claimed: false, retry_count: (row.retry_count || 0) + 1, last_error: "make timeout recovery" }),
+    });
+    await sb(env, "/relay_errors", {
+      method: "POST",
+      body: JSON.stringify({ component: "make_api", reel_id: row.id, message: "handoff timeout recovery", payload: { retry: (row.retry_count || 0) + 1 } }),
+    });
+  }
+}
 async function pickInsightMedia(env: Env): Promise<string | null> {
   const r = await sb(env, "/relay_queue?status=eq.published&ig_media_id=not.is.null&order=published_at.asc&limit=1&select=ig_media_id");
   const rows = r.ok ? ((await r.json()) as any[]) : [];
@@ -194,6 +209,9 @@ export async function handleMakeApi(env: Env, request: Request, path: string): P
     const recent = await recentHandoff(env);
     if (recent) return json(reelPayload(recent, null));
 
+    // Recovery: re-queue reels stuck in handed_off/unknown for > 60 min.
+    try { await recoverStuck(env); } catch (e) { /* best effort */ }
+
     const row = await claimDue(env);
     if (!row) return json({ empty: true, reason: "none_due" });
     if (!(await handoff(env, row.id))) return json({ empty: true, reason: "claim_lost" });
@@ -244,6 +262,10 @@ async function handleAck(env: Env, request: Request): Promise<Response> {
         make_run_note: message,
         last_error: message,
       }),
+    });
+    await sb(env, "/relay_errors", {
+      method: "POST",
+      body: JSON.stringify({ component: "make_api", reel_id: reel_id, message: String(message || "make failed"), payload: { status } }),
     });
     await telegram(env, `Make failed: reel ${reel_id}: ${message}`);
   }

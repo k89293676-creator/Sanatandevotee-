@@ -4,6 +4,7 @@ import { stepPublisher } from "./publisher";
 import { stepEngage } from "./engage";
 import { stepYoutube } from "./youtube";
 import { checkMakeHealth } from "./make_health";
+import { recoverStuck } from "./make_api";
 import { telegram, dedupeAlert } from "./alerts";
 import { sb, stateFlag, stateString } from "./db";
 
@@ -38,6 +39,7 @@ export async function scheduled(env: Env, event: ScheduledEvent): Promise<void> 
   }
   // 6. Make.com health: unacked handoffs and the dead-man ping (make_api path only).
   if (backend === "make_com" && postingOn) {
+    try { await recoverStuck(env); } catch (e) { await telegram(env, "Recovery error: " + String(e)); }
     try { await checkMakeHealth(env); } catch (e) { await telegram(env, "Make health error: " + String(e)); }
   }
   // 7. alerts.step: buffer check

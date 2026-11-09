@@ -7,7 +7,7 @@ from .db import init_db
 from .logging_setup import setup_logging
 from .power import can_render, max_threads
 from .verses import upsert_verses, load_pack
-from . import optimizer, planner, sync
+from . import optimizer, planner, sync, cleanup
 
 log = setup_logging("daemon")
 ROOT = project_root()
@@ -150,6 +150,11 @@ def tick(relay_url: str):
         optimizer.run_optimizer()
     except Exception as e:
         log.error("optimizer err %s", e)
+    # disk hygiene
+    try:
+        cleanup.run_cleanup()
+    except Exception as e:
+        log.error("cleanup err %s", e)
 
 
 def main():
