@@ -10,9 +10,10 @@ from src.factory import optimizer, planner   # noqa: E402
 
 def test_special_days_reads_the_data_file():
     days = planner.special_days()
-    # values that only exist in data/special_days.json (not in the computed fallback)
-    assert "2026-07-06" in days
-    assert "2026-01-13" in days
+    # values that only exist in data/special_days.json (not in the computed fallback):
+    # Maha Shivratri and Kartik Purnima from the generated calendar.
+    assert "2026-02-15" in days
+    assert "2026-11-24" in days
     assert len(days) > 100
 
 
