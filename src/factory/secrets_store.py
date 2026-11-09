@@ -7,6 +7,10 @@ SERVICE = "chalisa-factory"
 
 
 def get_secret(name: str) -> Optional[str]:
+    import os
+    v = os.environ.get(name)
+    if v:
+        return v
     try:
         return keyring.get_password(SERVICE, name)
     except Exception:

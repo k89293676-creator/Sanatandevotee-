@@ -22,6 +22,7 @@ export interface Env {
   MAKE_CREDITS_BUDGET_MONTHLY?: string;
   MAKE_CREDITS_PER_RUN?: string;
   MAKE_MAX_CALLS_PER_MINUTE?: string;
+  MAKE_BATCH_LIMIT?: string;
   // Feature flags (config.yaml is not shipped to the Worker, so these mirror it).
   // Defaults are deliberately conservative: direct Graph publishing is OFF.
   PUBLISH_BACKEND?: string;      // "make_com" (default) | "business_suite_manual" | "graph_api"

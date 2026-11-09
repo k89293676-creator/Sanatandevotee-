@@ -189,6 +189,14 @@ export async function handleMakeApi(env: Env, request: Request, path: string): P
     });
   }
 
+  if (path === "/api/make/pending" && request.method === "GET") {
+    await touch(env, request.url.includes("test=1"));
+    const limit = intEnv(env.MAKE_BATCH_LIMIT, 5);
+    const r = await sb(env, `/relay_queue?status=eq.scheduled&order=scheduled_at.asc&limit=${limit}&select=id,video_url,caption,first_comment`);
+    const rows = r.ok ? ((await r.json()) as any[]) : [];
+    return json({ empty: rows.length === 0, rows });
+  }
+
   if (path !== "/api/make/next" && path !== "/api/make/ack") {
     return handleRemaining(env, request, path);
   }

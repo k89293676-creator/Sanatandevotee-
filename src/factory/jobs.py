@@ -146,6 +146,21 @@ def upload_reel(row, manifest: dict, relay_url: str, conn=None) -> bool:
         }
         if not sync.enqueue(relay_url, payload):
             raise RuntimeError("enqueue rejected")
+        # Event-driven handoff: notify Make.com directly when configured.
+        import os, httpx
+        webhook_url = os.environ.get("MAKE_WEBHOOK_URL")
+        if webhook_url:
+            try:
+                wh_payload = {
+                    "reel_id": row["uuid"],
+                    "video_url": vid["public_url"],
+                    "caption": caption,
+                    "first_comment": "Har Har Mahadev",
+                    "insight_media_id": None,
+                }
+                httpx.post(webhook_url, json=wh_payload, timeout=30)
+            except Exception as e:
+                log.warning("make webhook dispatch failed: %s", e)
         _mark(conn, row["uuid"], status="uploaded", remote_video_url=vid["public_url"],
               remote_cover_url=cover_public, last_error=None)
         from . import cleanup
