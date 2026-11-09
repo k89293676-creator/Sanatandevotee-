@@ -14,6 +14,7 @@ export interface Env {
   YOUTUBE_CLIENT_ID?: string;
   YOUTUBE_CLIENT_SECRET?: string;
   YOUTUBE_REFRESH_TOKEN?: string;
+  YOUTUBE_ENABLED?: string;      // "true" only when YouTube delegation is approved
   // Feature flags (config.yaml is not shipped to the Worker, so these mirror it).
   // Defaults are deliberately conservative: direct Graph publishing is OFF.
   PUBLISH_BACKEND?: string;      // "make_com" (default) | "business_suite_manual" | "graph_api"
