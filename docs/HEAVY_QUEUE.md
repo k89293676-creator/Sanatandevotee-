@@ -21,6 +21,10 @@ Mark any new slow test with `@pytest.mark.heavy` in `pytest.ini`-registered mark
 ## Verified in Heavy Pass (2026-11-09)
 
 - `tests/test_render.py::test_full_render_and_validate` — PASSED (318.59s). Full render + validate, `v["ok"]` True; manifest cut/length/transition assertions passed.
-- `tests/test_render.py::test_manifest_uses_complex_shaping_and_distinct_shots` — PASSED (part of 375.00s batch).
+- `tests/test_render.py::test_manifest_uses_complex_shaping_and_distinct_shots` — PASSED.
 - `tests/test_render.py::test_validate_fails_for_the_right_reason` — PASSED.
+- Real reel via `jobs.render_reel_row` (meaning format, 36.4s) — PASSED (340.4s). 8/8 distinct assets, `cut_source=mixed`, transitions varied, `quality_score=100`, validate `ok=True`, LUFS -14.0, 0 silences, 12 scene changes.
+- `contact_sheet` generated for the real reel (`media/contact_heavy.jpg`).
+- `scripts/render_batch.py --limit 1` — success path PASSED (rendered 1, failed 0, 528.1s); failure path (narration too long) handled gracefully and marked failed.
+- `scripts/simulate_offline.py` — PASSED (28 relay tests, exit 0).
 - Total heavy suite for `test_render.py`: 3 passed.
