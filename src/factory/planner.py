@@ -4,9 +4,10 @@ import uuid, json
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
 
-from .config import load_config
+from .config import load_config, project_root
 from .db import connect, init_db
 from .logging_setup import setup_logging
+from . import optimizer
 
 log = setup_logging("planner")
 cfg = load_config()
@@ -25,23 +26,51 @@ def ist_to_utc(dt_ist: datetime) -> datetime:
 
 
 def special_days(years: int = 5) -> set:
-    # Mondays, Pradosh (13th tithi approximated as 13th day of lunar half - we approximate with calendar 13th?),
-    # Shravan Mondays, Maha Shivratri, Kartik Purnima. We'll compute Mondays + a few fixed dates simply.
+    """Special dates from data/special_days.json (written by scripts/special_days.py).
+
+    Falls back to computed Mondays + fixed festival dates when the file is missing.
+    """
+    p = project_root() / "data" / "special_days.json"
+    if p.exists():
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            out = set()
+            for groups in data.values():
+                if not isinstance(groups, dict):
+                    continue
+                for name, dates in groups.items():
+                    if name.startswith("_") or not isinstance(dates, list):
+                        continue
+                    out.update(str(d) for d in dates)
+            if out:
+                return out
+        except Exception as e:
+            log.warning("special_days.json unreadable (%s); using computed dates", e)
+    return _computed_special_days(years)
+
+
+def _computed_special_days(years: int = 5) -> set:
     import zoneinfo
     res = set()
     now = datetime.now(timezone.utc).astimezone(zoneinfo.ZoneInfo("Asia/Kolkata"))
     for y in range(now.year, now.year + years):
-        # Mondays
         d = datetime(y, 1, 1, tzinfo=zoneinfo.ZoneInfo("Asia/Kolkata"))
         while d.year == y:
-            if d.weekday() == 0:
+            if d.weekday() == 0:                 # Mondays
                 res.add(d.date().isoformat())
             d += timedelta(days=1)
-        # Maha Shivratri approx: Feb/Mar; use 26 Feb as placeholder? We'll add Feb 26
-        res.add(f"{y}-02-26")
-        # Kartik Purnima approx: Nov full moon; use Nov 15
-        res.add(f"{y}-11-15")
+        res.add(f"{y}-02-26")                    # Maha Shivratri (approximate)
+        res.add(f"{y}-11-15")                    # Kartik Purnima (approximate)
     return res
+
+
+def _pick(arm_type: str, options, default: str) -> str:
+    """Optimizer choice with a safe fallback so planning never fails on the bandit."""
+    try:
+        return optimizer.choose_arm(arm_type, list(options or [])) or default
+    except Exception as e:
+        log.warning("optimizer unavailable for %s: %s", arm_type, e)
+        return default
 
 
 def next_unseen_verse(conn, pack: str) -> dict | None:
@@ -75,6 +104,10 @@ def plan(pack: str = "shiv_chalisa", days: int = None) -> dict:
         last_dt = datetime.fromisoformat(last["m"].replace("Z", "+00:00"))
         cursor_date = last_dt.astimezone(__import__("zoneinfo").ZoneInfo("Asia/Kolkata")).date() + timedelta(days=1)
     sd_set = special_days(5)
+    # optimizer-selected arms (Thompson + exploration floor) instead of hard-coded defaults
+    hook_style = _pick("hook_style", cfg.get("hook_styles"), "question")
+    voice = _pick("voice", cfg.get("voices"), "madhur")
+    visual_style = _pick("visual_style", cfg.get("visual_styles"), "cosmic_blue")
     # reserve pool: create reserve_reels evergreen reels unscheduled
     reserve_n = cfg["scheduling"]["reserve_reels"]
     existing_reserve = conn.execute("SELECT COUNT(*) c FROM reels WHERE is_reserve=1").fetchone()["c"]
@@ -92,8 +125,8 @@ def plan(pack: str = "shiv_chalisa", days: int = None) -> dict:
                     conn.execute(
                         """INSERT INTO reels (uuid,verse_id,script_id,format,hook_idx,hook_style,voice,visual_style,slot_label,series_day,is_reserve,status)
                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                        (uid, v["id"], scripts[(v["id"], fmt)]["id"], fmt, 0, "question", "madhur",
-                         "cosmic_blue", "reserve", None, 1, "planned"),
+                        (uid, v["id"], scripts[(v["id"], fmt)]["id"], fmt, 0, hook_style, voice,
+                         visual_style, "reserve", None, 1, "planned"),
                     )
                     ri += 1
                     existing_reserve += 1
@@ -166,8 +199,8 @@ def plan(pack: str = "shiv_chalisa", days: int = None) -> dict:
             conn.execute(
                 """INSERT INTO reels (uuid,verse_id,script_id,format,hook_idx,hook_style,voice,visual_style,slot_label,series_day,is_reserve,scheduled_at_utc,status)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (uid, v["id"], scripts[(v["id"], fmt)]["id"], fmt, 0, "question",
-                 "madhur", "cosmic_blue", slot, series_day, 0, utc.isoformat(), "planned"),
+                (uid, v["id"], scripts[(v["id"], fmt)]["id"], fmt, 0, hook_style,
+                 voice, visual_style, slot, series_day, 0, utc.isoformat(), "planned"),
             )
             created += 1
         day += 1

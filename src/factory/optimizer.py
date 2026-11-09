@@ -76,6 +76,33 @@ def weights() -> dict:
     return out
 
 
+def arms_for(arm_type: str) -> List[str]:
+    """All known arm keys for a type (config keys first, then whatever is in the table)."""
+    ensure_arms()
+    conn = connect()
+    rows = conn.execute("SELECT arm_key FROM arms WHERE arm_type=? ORDER BY arm_key", (arm_type,)).fetchall()
+    conn.close()
+    return [r["arm_key"] for r in rows]
+
+
+def choose_arm(arm_type: str, options: List[str] | None = None) -> str:
+    """Pick an arm with Thompson sampling, but keep an explicit exploration floor.
+
+    `exploration_floor` (config, default 0.20) is the chance of a uniform random pick;
+    otherwise the Beta posterior decides. Returns "" only when there are no arms at all.
+    """
+    opts = [o for o in (options or []) if o]
+    if not opts:
+        opts = arms_for(arm_type)
+    if not opts:
+        return ""
+    floor = float(cfg.get("optimizer", {}).get("exploration_floor", 0.20) or 0.0)
+    if floor > 0 and random.random() < floor:
+        return random.choice(opts)
+    picked = thompson_sample(arm_type)
+    return picked if picked in opts else random.choice(opts)
+
+
 def compute_reward(insight: dict, baseline: float = 1.0) -> float:
     # reward weights from config
     w = cfg.get("optimizer", {}).get("reward_weights", {"watch_ratio": 0.5, "shares_per_reach": 0.25, "saves_per_reach": 0.15, "follows_proxy": 0.10})
