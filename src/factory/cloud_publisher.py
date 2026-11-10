@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -115,7 +116,7 @@ def fetch_approved_reels() -> list[dict]:
     }
     r = sb(path, **params)
     if r.status_code != 200:
-        log.warning("fetch_approved_reels relay status %s", r.status_code)
+        logger.warning("fetch_approved_reels relay status %s", r.status_code)
         return []
     rows = r.json()
     return [dict(r) for r in rows] if isinstance(rows, list) else []
@@ -129,26 +130,28 @@ def mark_published_in_supabase(uuid: str, published_at_iso: str, platform: str) 
             [{"key": f"published_{uuid}", "value": json.dumps({"platform": platform, "published_at": published_at_iso})}],
         )
     except Exception as e:
-        log.warning("mark_published_in_supabase err %s", e)
+        logger.warning("mark_published_in_supabase err %s", e)
 
 
-def log(msg: str) -> None:
-    ts = datetime.now(timezone.utc).isoformat()
-    print(f"[{ts}] cloud_publisher: {msg}")
+logger = logging.getLogger("cloud_publisher")
+logger.setLevel(logging.INFO)
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter("[%(asctime)s] cloud_publisher: %(message)s"))
+logger.addHandler(handler)
 
 
 def main() -> int:
-    log("cloud publisher start")
+    logger.info("cloud publisher start")
     if not SUPABASE_URL or not SUPABASE_KEY:
-        log("fatal: missing SUPABASE_URL / SUPABASE_SERVICE_KEY")
+        logger.error("fatal: missing SUPABASE_URL / SUPABASE_SERVICE_KEY")
         return 1
 
     # Fetch approved reels ready for publishing
     reels = fetch_approved_reels()
-    log(f"fetched {len(reels)} approved reels for publish")
+    logger.info(f"fetched {len(reels)} approved reels for publish")
 
     if not reels:
-        log("no reels to publish")
+        logger.info("no reels to publish")
         return 0
 
     # YouTube token
@@ -177,10 +180,10 @@ def main() -> int:
                 due = True  # fallback: publish
 
         if not due:
-            log(f"skipping {uuid} (not due yet; scheduled={scheduled})")
+            logger.info(f"skipping {uuid} (not due yet; scheduled={scheduled})")
             continue
 
-        log(f"processing {uuid} day={series_day} due={due}")
+        logger.info(f"processing {uuid} day={series_day} due={due}")
 
         # Platform and permalink
         platform = "youtube"
@@ -195,7 +198,7 @@ def main() -> int:
         stats = None
         if yt_token and video_id:
             stats = {"viewCount": "0", "likeCount": "0", "commentCount": "0"}
-            log(f" youtube video_id={video_id} acknowledged")
+            logger.info(f" youtube video_id={video_id} acknowledged")
         elif video_path and video_path.exists():
             title = f"Shiv Chalisa – Day {series_day or '?'}"
             description = f"Verse {series_day or ''} of the Shiv Chalisa."
@@ -205,9 +208,9 @@ def main() -> int:
                 video_id = result.get("youtube_video_id")
                 stats = result.get("stats", {})
                 permalink = f"https://youtube.com/shorts/{video_id}"
-                log(f" youtube uploaded video_id={video_id}")
+                logger.info(f" youtube uploaded video_id={video_id}")
             else:
-                log(" youtube upload failed (no OAuth creds or API error)")
+                logger.warning(" youtube upload failed (no OAuth creds or API error)")
 
         # Make.com Instagram publish (via webhook)
         make_success = False
@@ -220,13 +223,13 @@ def main() -> int:
                 )
                 if r.status_code == 200:
                     make_success = True
-                    log(f" make.com instagram webhook ok for {uuid}")
+                    logger.info(f" make.com instagram webhook ok for {uuid}")
                 else:
-                    log(
+                    logger.warning(
                         f" make.com webhook returned {r.status_code}: {r.text[:120]}"
                     )
             except Exception as e:
-                log(f" make.com webhook err {e}")
+                logger.warning(f" make.com webhook err {e}")
 
         # Record publish in Supabase relay_state
         published_at = datetime.now(timezone.utc).isoformat()
@@ -248,13 +251,13 @@ def main() -> int:
                 },
                 timeout=15,
             )
-            log(f" relay recorded publish for {uuid} -> {r2.status_code}")
+            logger.info(f" relay recorded publish for {uuid} -> {r2.status_code}")
         except Exception as e:
-            log(f" relay record err {e}")
+            logger.warning(f" relay record err {e}")
 
-        log(f"published {uuid} -> {platform} {permalink} make={make_success}")
+        logger.info(f"published {uuid} -> {platform} {permalink} make={make_success}")
 
-    log("cloud publisher complete")
+    logger.info("cloud publisher complete")
     return 0
 
 
