@@ -24,29 +24,62 @@ def refresh_access_token() -> str | None:
     return r.json().get("access_token")
 
 
-def upload(video_path: Path, title: str, description: str) -> str | None:
+def upload(video_path: Path, title: str, description: str,
+           tags: list[str] | None = None, privacy: str = "public",
+           category_id: str = "22") -> str | None:
+    """Resumable upload of a Short. Returns the video id, or None on failure.
+
+    `privacy` must be one of public / unlisted / private; callers decide, no default
+    side-stepping of the human gate beyond the explicit `public` asked for here.
+    """
     token = refresh_access_token()
     if not token:
         return None
+    snippet: dict = {"title": title[:100], "description": description,
+                     "categoryId": category_id}
+    if tags:
+        snippet["tags"] = tags[:15]
     # init resumable session
     init = httpx.post(
         "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json; charset=UTF-8",
                  "X-Upload-Content-Type": "video/mp4"},
-        json={"snippet": {"title": title[:100], "description": description, "categoryId": "22"},
-              "status": {"privacyStatus": "public", "selfDeclaredMadeForKids": False}},
+        json={"snippet": snippet,
+              "status": {"privacyStatus": privacy, "selfDeclaredMadeForKids": False}},
         timeout=30,
     )
     if init.status_code not in (200, 201):
-        log.warning("yt init fail %s", init.status_code)
+        log.warning("yt init fail %s %s", init.status_code, init.text[:400])
         return None
     upload_url = init.headers.get("Location")
     if not upload_url:
+        log.warning("yt init missing Location header")
         return None
     with video_path.open("rb") as f:
         data = f.read()
-    r = httpx.put(upload_url, content=data, headers={"Content-Type": "video/mp4"}, timeout=300)
+    r = httpx.put(upload_url, content=data, headers={"Content-Type": "video/mp4"}, timeout=600)
     if r.status_code in (200, 201):
         return r.json().get("id")
-    log.warning("yt upload fail %s", r.status_code)
+    log.warning("yt upload fail %s %s", r.status_code, r.text[:400])
     return None
+
+
+def post_first_comment(video_id: str, text: str) -> str | None:
+    """Post the pinned engagement comment. Needs the youtube.force-ssl scope.
+
+    Returns the comment id, or None when the token lacks the scope / the call fails.
+    """
+    token = refresh_access_token()
+    if not token:
+        return None
+    body = {"snippet": {"videoId": video_id,
+                        "topLevelComment": {"snippet": {"textOriginal": text}}}}
+    r = httpx.post("https://www.googleapis.com/youtube/v3/commentThreads",
+                   params={"part": "snippet"},
+                   headers={"Authorization": f"Bearer {token}",
+                            "Content-Type": "application/json"},
+                   json=body, timeout=60)
+    if r.status_code not in (200, 201):
+        log.warning("yt comment fail %s %s", r.status_code, r.text[:300])
+        return None
+    return r.json().get("id")

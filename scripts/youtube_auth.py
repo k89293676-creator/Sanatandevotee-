@@ -6,7 +6,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 try:
     from google_auth_oauthlib.flow import InstalledAppFlow
-    SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"]
+    # force-ssl is required to post the engagement "first comment" after upload.
+    SCOPES = [
+        "https://www.googleapis.com/auth/youtube.upload",
+        "https://www.googleapis.com/auth/youtube.readonly",
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+    ]
     secret_file = ROOT / "client_secret.json"
     if not secret_file.exists():
         print("Missing client_secret.json in project root. Create OAuth client in Google Cloud Console.")
