@@ -14,7 +14,7 @@ export default {
     if (path.startsWith("/api/make/")) {
       return handleMakeApi(env, request, path);
     }
-    if (path === "/privacy" || path === "/terms" || path === "/data-deletion" || path === "/chalisa" || path === "/") {
+    if (path === "/privacy" || path === "/terms" || path === "/data-deletion" || path === "/chalisa" || path === "/dashboard" || path === "/") {
       return env.ASSETS.fetch(request);
     }
     if (path === "/status.json" || path === "/mediakit") {

@@ -10,6 +10,7 @@ export interface Env {
   META_APP_ID: string;
   META_APP_SECRET: string;
   IG_USER_ID: string;
+  IG_ACCESS_TOKEN?: string;
   ASSETS: Fetcher;
   YOUTUBE_CLIENT_ID?: string;
   YOUTUBE_CLIENT_SECRET?: string;
