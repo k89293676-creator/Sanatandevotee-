@@ -4,7 +4,8 @@
 - `planner.special_days` now computes real tithi for Shivratri/Kartik Purnima and Mahashivratri, but other festivals (Navratri, Diwali, etc.) are not yet generated; `_note` labels approximations.
 - `optimizer` reward/floor/cap logic exists but is not wired into `planner.choose_arm` beyond `choose_arm`; reward updates are only called from the daemon path.
 - `pdfgen` and `monetisation` modules are unreviewed stubs.
-- `youtube_auth` / `youtube_upload` gating is implemented but never exercised end-to-end (no real OAuth run in this session).
+- `youtube_auth` / `youtube_upload` are exercised end-to-end (real publish of Day 1, `gJBHA7cb4H0`; channel branding applied via API). Still outside the API: channel name, avatar, About links and handle can only be set in YouTube Studio, and custom thumbnails need phone-verified channel status.
+- `relay/public` has no `chalisa` page even though `index.ts` routes `/chalisa` to ASSETS, so that path returns 404; the channel's About link points at `/` instead.
 - `analytics.import_insights_csv`, `youtube_stats`, `weekly_report` are partial.
 - `lessons_memo` exists but is not wired into the daemon.
 - `osx/` generators target macOS; untested on Windows.
