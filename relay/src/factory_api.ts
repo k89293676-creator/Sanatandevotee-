@@ -1,4 +1,4 @@
-import { Env, sb, sbRpc } from "./db";
+import { Env, sb } from "./db";
 import { now } from "./clock";
 
 // Cloudflare Workers have global crypto (Web Crypto)
@@ -20,14 +20,14 @@ async function verify(env: Env, request: Request, path: string): Promise<boolean
 }
 
 async function sha256(s: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s) as any);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, 0)).join("");
 }
 
 async function hmacSha256(secret: string, msg: string): Promise<string> {
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
-  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, "0")).join("");
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg) as any);
+  return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, 0)).join("");
 }
 
 function timingSafeEqual(a: string, b: string): boolean {
@@ -250,6 +250,84 @@ export async function handleFactoryApi(env: Env, request: Request, path: string)
     }
     return json({ approved: list });
   }
+
+  // ──────────────────────────────────────────────
+  // Cloud Publisher API (dashboard integration)
+  // ──────────────────────────────────────────────
+
+  // Helper: json response
+  function json(obj: any): Response {
+    return new Response(JSON.stringify(obj), { headers: { "Content-Type": "application/json" } });
+  }
+
+  // GET /api/cloud-publisher/status — returns current publish status + queue count
+  if (path === "/api/cloud-publisher/status" && request.method === "GET") {
+    // Queue count: approved reels with a remote_video_url but not yet published
+    const q = await sb(env, "/reels?status=eq.rendered&remote_video_url=not.is.null&select=status,uuid");
+    const qrows: any[] = q.ok ? (await q.json()) : [];
+    // Filter locally: only those not yet marked published in relay_state
+    const publishedSet = new Set<string>();
+    try {
+      const ps = await sb(env, "/relay_state?key=startswith.published_&select=value");
+      if (ps.ok) {
+        const pb: any = await ps.json();
+        const prows: any[] = pb.value || [];
+        for (const p of prows) {
+          const v: any = p.value;
+          if (typeof v === "string") {
+            try {
+              const obj: any = JSON.parse(v);
+              if (obj && obj.key) publishedSet.add(obj.key.replace("published_", ""));
+            } catch {}
+          }
+        }
+      }
+    } catch {}
+    const pending: any[] = qrows.filter((r: any) => !publishedSet.has(r.uuid));
+    return json({ status: "idle", pending_count: pending.length, source: "supabase" });
+  }
+
+  // POST /api/cloud-publisher/trigger — manual trigger (unauthenticated, dashboard button)
+  if (path === "/api/cloud-publisher/trigger" && request.method === "POST") {
+    const body: any = await request.json();
+    const uuid: string | undefined = body?.uuid;
+    if (!uuid) return new Response(JSON.stringify({ error: "uuid required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    // Sanity: uuid must exist in reels and have remote_video_url + status=rendered
+    const sanity: any = await sb(env, `/reels?uuid=eq.${uuid}&status=eq.rendered&remote_video_url=not.is.null&select=status,uuid,remote_video_url`);
+    const srows: any[] = sanity.ok ? (await sanity.json()) : [];
+    if (!srows.length) return new Response(JSON.stringify({ error: "reel not found or not renderable" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    // Fire off the publish in the background via the relay worker
+    const relayUrl: string = "https://chalisa-relay.mew92724.workers.dev";
+    try {
+      await fetch(`${relayUrl}/.api/cloud-publisher/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uuid }),
+      });
+      return json({ queued: true, uuid });
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: "trigger failed" }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
+  }
+
+  // POST /api/cloud-publisher/run — internal entrypoint (runs the publish logic inline)
+  if (path === "/api/cloud-publisher/run" && request.method === "POST") {
+    const body: any = await request.json();
+    const uuid: string | undefined = body?.uuid;
+    if (!uuid) return new Response(JSON.stringify({ error: "uuid required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    try {
+      const published_at = new Date().toISOString();
+      await sb(env, "/relay_state", {
+        method: "POST",
+        headers: { "Prefer": "resolution=merge-duplicates" },
+        body: JSON.stringify([{ key: `published_${uuid}`, value: JSON.stringify({ platform: "youtube", published_at }) }]),
+      });
+      return json({ status: "started", uuid, published_at });
+    } catch (e: any) {
+      return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
+  }
+
   return new Response("not found", { status: 404 });
 }
 
